@@ -1,4 +1,4 @@
-"""使用项目虚拟环境中的 PyInstaller 构建单文件 EXE。"""  # 说明本脚本只负责准备环境和执行打包。
+"""使用项目虚拟环境中的 PyInstaller 构建单文件可执行程序。"""  # 说明本脚本只负责准备环境和执行打包。
 
 from pathlib import Path  # 用统一的路径对象定位项目文件。
 import subprocess  # 用于调用环境准备入口和 PyInstaller。
@@ -13,6 +13,15 @@ MAIN_FILE = PROJECT_ROOT / "main.py"  # 指向程序的统一启动入口。
 APP_ENTRY = SOURCE_ROOT / "main.py"  # 指向不包含开发环境检查的真正应用入口。
 VENV_ROOT = PROJECT_ROOT / ".venv"  # 指向项目独立使用的虚拟环境目录。
 VENV_PYTHON = VENV_ROOT / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")  # 定位虚拟环境解释器。
+
+
+def artifact_name() -> str:  # 集中处理各桌面平台的发布产物命名差异。
+    """返回当前平台面向用户的主要构建产物名称。"""  # 让后续平台专用构建规则可以继续在这里扩展。
+    if sys.platform == "win32":  # Windows 的可执行程序使用 exe 后缀。
+        return f"{APP_NAME}.exe"  # 对应 PyInstaller 在 Windows 上生成的单文件程序。
+    if sys.platform == "darwin":  # windowed 模式在 macOS 上生成应用程序包。
+        return f"{APP_NAME}.app"  # 面向用户展示可双击启动的 macOS 应用包。
+    return APP_NAME  # Linux 等类 Unix 桌面平台的可执行文件默认没有后缀。
 
 
 def main() -> int:  # 定义构建入口，并用整数表示最终退出状态。
@@ -36,7 +45,7 @@ def main() -> int:  # 定义构建入口，并用整数表示最终退出状态�
         str(PROJECT_ROOT),  # 让 PyInstaller 能发现 src 和 version 两个项目包。
         "--specpath",  # 指定自动生成的 PyInstaller spec 文件目录。
         str(PROJECT_ROOT / "build"),  # 将 spec 文件也归入可清理的 build 目录。
-        str(APP_ENTRY),  # 直接打包真正的应用入口，不把开发环境检查带入 EXE。
+        str(APP_ENTRY),  # 直接打包真正的应用入口，不把开发环境检查带入发布程序。
     ]  # 完成 PyInstaller 命令定义。
 
     subprocess.run(  # 执行已经定义好的 PyInstaller 构建命令。
@@ -45,7 +54,7 @@ def main() -> int:  # 定义构建入口，并用整数表示最终退出状态�
         check=True,  # 构建失败时抛出错误，不再显示成功信息。
     )  # 等待 PyInstaller 构建结束。
 
-    output = PROJECT_ROOT / "dist" / f"{APP_NAME}.exe"  # 根据统一应用名称计算 Windows EXE 的预期位置。
+    output = PROJECT_ROOT / "dist" / artifact_name()  # 按当前平台计算面向用户的主要构建产物位置。
     print(f"构建完成：{output}")  # 向开发者显示最终构建产物路径。
     return 0  # 用零退出码表示构建成功。
 
