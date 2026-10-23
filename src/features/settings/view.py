@@ -84,9 +84,11 @@ class SettingsView(QWidget):
         self._baseline = self.configuration.get(section.key)
         self._editors = {}
         content = QWidget()
+        content.setObjectName("SettingsForm")
         form = QFormLayout(content)
         form.setContentsMargins(16, 20, 16, 20)
         form.setSpacing(16)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         for field in section.fields:
             if field.kind == "bool":

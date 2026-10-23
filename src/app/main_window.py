@@ -4,8 +4,8 @@ from dataclasses import dataclass
 import logging
 from typing import Callable
 
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtWidgets import QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from src.app.notifications import NotificationCenter
 from src.shared.configuration import Configuration
@@ -36,23 +36,44 @@ class ApplicationWindow(QMainWindow):
         self._pages = QStackedWidget()
         sidebar = QWidget()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(184)
+        sidebar.setFixedWidth(208)
         nav = QVBoxLayout(sidebar)
         nav.setContentsMargins(16, 22, 16, 18)
         nav.setSpacing(8)
-        brand = QLabel("DAYLIGHT")
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(10)
+        mark = QLabel()
+        mark.setObjectName("BrandMark")
+        mark.setProperty("themeIcon", "sunrise")
+        mark.setFixedSize(40, 40)
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mark.setAccessibleName("Daylight 日出标志")
+        brand_row.addWidget(mark)
+        brand_text = QVBoxLayout()
+        brand_text.setSpacing(2)
+        brand = QLabel("日常信息台")
         brand.setObjectName("Brand")
-        nav.addWidget(brand)
-        note = QLabel("时间 · 天气 · 每一天")
-        note.setObjectName("Muted")
-        nav.addWidget(note)
-        nav.addSpacing(26)
+        note = QLabel("DAYLIGHT")
+        note.setObjectName("BrandCaption")
+        brand_text.addWidget(brand)
+        brand_text.addWidget(note)
+        brand_row.addLayout(brand_text)
+        brand_row.addStretch()
+        nav.addLayout(brand_row)
+        nav.addSpacing(12)
+        divider = QFrame()
+        divider.setObjectName("Divider")
+        divider.setFixedHeight(1)
+        nav.addWidget(divider)
+        nav.addSpacing(12)
         group = QButtonGroup(self)
         group.setExclusive(True)
         initial = 0
         buttons = []
         for index, page in enumerate(pages):
-            button = QPushButton(f"{page.caption}   {page.title}")
+            button = QPushButton(page.title)
+            button.setProperty("navigationIcon", page.key)
+            button.setIconSize(QSize(20, 20))
             button.setObjectName("Navigation")
             button.setCheckable(True)
             button.clicked.connect(lambda _checked=False, target=index: self._pages.setCurrentIndex(target))

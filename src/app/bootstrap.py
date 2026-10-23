@@ -82,6 +82,7 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
         PageDefinition("logs", "日志", "≡", LogsView(log_model, themes)),
         PageDefinition("settings", "设置", "⚙", SettingsView(registry, configuration, storage)),
     ), configuration, tasks, stop_producers)
+    themes.bind_window(window)
     clock.alert.connect(window.notifications.report)
     weather.alert.connect(window.notifications.report)
     LOGGER.info("应用装配完成：4 个页面，%d 个配置模块", len(registry.sections))

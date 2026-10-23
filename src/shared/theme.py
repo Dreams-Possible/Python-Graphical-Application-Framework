@@ -3,9 +3,10 @@
 import logging
 from string import Template
 
-from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QByteArray, QObject, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap
+from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from src.shared.paths import resource_path
 
@@ -25,13 +26,16 @@ PALETTES = {
 }
 
 STYLE = Template("""
-* { font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+* { font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans CJK SC', 'PingFang SC', sans-serif;
     font-size: 14px; color: $text; }
 QMainWindow, QDialog, QMessageBox { background: $background; }
 QWidget#Sidebar { background: $surface; border-right: 1px solid $border; }
 QLabel { background: transparent; }
-QLabel#Brand { font-size: 21px; font-weight: 700; color: $accent; padding: 12px 4px; }
-QLabel#PageTitle { font-size: 26px; font-weight: 600; }
+QLabel#Brand { font-size: 16px; font-weight: 600; color: $text; }
+QLabel#BrandCaption { font-size: 10px; color: $muted; font-family: 'Segoe UI', sans-serif; }
+QLabel#BrandMark { background: $selected; border-radius: 12px; }
+QFrame#Divider { background: $border; border: 0; }
+QLabel#PageTitle { font-size: 24px; font-weight: 600; }
 QLabel#SectionTitle { font-size: 17px; font-weight: 600; }
 QLabel#Muted { color: $muted; font-size: 12px; }
 QLabel#Status { color: $success; font-weight: 600; }
@@ -52,11 +56,12 @@ QPushButton#Primary:disabled { background: $border; color: $disabled; border-col
 QPushButton#Navigation { text-align: left; border: 1px solid transparent; background: transparent; padding: 13px 16px; }
 QPushButton#Navigation:hover { background: $hover; }
 QPushButton#Navigation:checked { color: $accent; background: $selected; font-weight: 600; }
-QPushButton#Navigation:focus { border-color: $accent; }
-QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: $surface; color: $text;
+QPushButton#Navigation:focus { border-color: transparent; background: $hover; }
+QPushButton#Navigation:checked:focus { background: $selected; }
+QLineEdit, QSpinBox, QDoubleSpinBox { background: $surface; color: $text;
     border: 1px solid $border; border-radius: 8px; padding: 8px 12px; min-height: 22px;
     selection-background-color: $selected; selection-color: $text; }
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus { border-color: $accent; }
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus { border-color: $accent; }
 QSpinBox, QDoubleSpinBox { padding-right: 38px; }
 QSpinBox::up-button, QDoubleSpinBox::up-button {
     subcontrol-origin: border; subcontrol-position: top right;
@@ -76,23 +81,26 @@ QSpinBox::up-button:off, QSpinBox::down-button:off,
 QDoubleSpinBox::up-button:off, QDoubleSpinBox::down-button:off { background: $background; }
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url("$up"); width: 10px; height: 6px; }
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url("$chevron"); width: 10px; height: 6px; }
-QComboBox { padding-right: 34px; }
-QComboBox:hover { border-color: $accent; }
+QComboBox { background: $surface; color: $text; border: 1px solid $border;
+    border-radius: 8px; padding: 9px 34px 9px 12px; min-height: 20px;
+    selection-background-color: $selected; selection-color: $text; }
+QComboBox:hover, QComboBox:focus, QComboBox:on { border-color: $accent; }
+QComboBox:disabled { background: $alternate; color: $disabled; border-color: $border; }
 QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: top right;
-    width: 28px; border: 0; border-left: 1px solid $border; }
+    width: 28px; border: 0; background: transparent; }
 QComboBox::down-arrow { image: url("$chevron"); width: 12px; height: 8px; }
-QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
-    color: $disabled; background: $alternate; }
-QComboBox QAbstractItemView { background: $surface; color: $text; border: 1px solid $border;
-    padding: 5px; outline: 0; selection-background-color: $selected; selection-color: $accent; }
-QComboBox QAbstractItemView::item { min-height: 30px; padding: 3px 12px; border-radius: 5px; }
-QComboBox QAbstractItemView::item:hover { background: $hover; }
-QComboBox QAbstractItemView::item:selected { background: $selected; color: $accent; }
+QComboBox QAbstractItemView { background: $surface; color: $text;
+    border: 1px solid $border; border-radius: 8px; padding: 4px;
+    selection-background-color: $selected; selection-color: $text; outline: 0; }
+QComboBox QAbstractItemView::item { min-height: 28px; padding: 4px 10px; }
+QComboBox QAbstractItemView::item:selected { background: $selected; color: $text; }
+QComboBox QAbstractItemView::item:disabled { color: $disabled; }
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled { background: $alternate; color: $disabled; }
 QCheckBox { spacing: 8px; }
 QCheckBox::indicator { width: 17px; height: 17px; border: 1px solid $muted; border-radius: 4px; background: $surface; }
 QCheckBox::indicator:checked { background: $accent; border-color: $accent; image: url("$check"); }
 QCheckBox:focus { color: $accent; }
-QTableWidget { background: $surface; alternate-background-color: $alternate; gridline-color: $border;
+QTableView { background: $surface; alternate-background-color: $alternate; gridline-color: $border;
     border: 1px solid $border; border-radius: 8px; selection-background-color: $selected; selection-color: $text; }
 QHeaderView::section { background: $alternate; color: $muted; border: 0;
     border-bottom: 1px solid $border; padding: 9px; font-weight: 600; }
@@ -110,13 +118,32 @@ QListWidget#SettingsCategories::item:hover { background: $hover; }
 QListWidget#SettingsCategories::item:selected { background: $selected; color: $accent; font-weight: 600; }
 QListWidget#SettingsCategories:focus::item:selected { border-color: $accent; }
 QScrollArea { border: 0; background: transparent; }
-QScrollArea > QWidget > QWidget { background: $background; }
+QWidget#SettingsForm { background: $surface; border-radius: 10px; }
 QScrollBar:vertical { background: $background; width: 10px; margin: 0; }
 QScrollBar:horizontal { background: $background; height: 10px; margin: 0; }
 QScrollBar::handle { background: $handle; border-radius: 4px; min-width: 24px; min-height: 24px; }
 QScrollBar::handle:hover { background: $muted; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: none; }
+QMenu { background: $surface; color: $text; border: 1px solid $border; padding: 5px; }
+QMenu::item { padding: 7px 24px; border-radius: 4px; }
+QMenu::item:selected { background: $selected; color: $accent; }
+QMenu::item:disabled { color: $disabled; }
+QMenu::separator { height: 1px; background: $border; margin: 4px; }
+QCheckBox:disabled { color: $disabled; }
+QCheckBox::indicator:disabled { background: $alternate; border-color: $border; }
+QCheckBox::indicator:checked:disabled { background: $disabled; }
+QTabBar::tab:hover { background: $hover; }
+QTabBar::tab:disabled { color: $disabled; }
+QTableView::item { padding: 5px; }
+QTableView { outline: 0; }
+QTableView::item:focus { border: 0; }
+QTextEdit, QPlainTextEdit { background: $surface; color: $text; border: 1px solid $border;
+    border-radius: 8px; selection-background-color: $selected; selection-color: $text; }
+QTextEdit:focus, QPlainTextEdit:focus { border-color: $accent; }
+QPushButton#Danger { color: $error; border-color: $error; }
+QPushButton#Danger:hover { background: $error_surface; }
+QPushButton#Danger:disabled { color: $disabled; border-color: $border; background: $alternate; }
 QToolTip { background: $surface; color: $text; border: 1px solid $border; padding: 8px; }
 """)
 
@@ -136,6 +163,8 @@ class ThemeManager(QObject):
         self.mode = "system"
         self.current = ""
         self.configuration = None
+        self._scheme_mode = None
+        self._syncing_scheme = False
         application.styleHints().colorSchemeChanged.connect(self._system_changed)
         self.apply()
 
@@ -148,16 +177,67 @@ class ThemeManager(QObject):
         configuration.changed.connect(self._configured)
         self._configured("appearance")
 
+    def bind_window(self, window) -> None:
+        """为窗口绑定图标刷新；页面只声明资源名称，不处理主题切换。"""
+        self.update_navigation_icons(window)
+        self.changed.connect(lambda: self.update_navigation_icons(window))
+
+    def update_navigation_icons(self, window) -> None:
+        """统一导航图标尺寸，并为普通、选中和禁用状态应用主题色。"""
+        for button in window.findChildren(QPushButton, "Navigation"):
+            name = button.property("navigationIcon")
+            source = resource_path(f"icons/{name}.svg").read_text(encoding="utf-8")
+            icon = QIcon()
+            for mode in (QIcon.Mode.Normal, QIcon.Mode.Active, QIcon.Mode.Selected, QIcon.Mode.Disabled):
+                for state in (QIcon.State.Off, QIcon.State.On):
+                    token = "disabled" if mode == QIcon.Mode.Disabled else ("accent" if state == QIcon.State.On else "text")
+                    renderer = QSvgRenderer(QByteArray(source.replace("currentColor", self.colors[token]).encode()))
+                    # 提供多种像素密度，避免高 DPI 屏幕上的线条模糊。
+                    for scale in (1, 2, 3):
+                        pixmap = QPixmap(20 * scale, 20 * scale)
+                        pixmap.fill(Qt.GlobalColor.transparent)
+                        painter = QPainter(pixmap)
+                        renderer.render(painter)
+                        painter.end()
+                        pixmap.setDevicePixelRatio(scale)
+                        icon.addPixmap(pixmap, mode, state)
+            button.setIcon(icon)
+        for label in window.findChildren(QLabel):
+            rich_text = label.property("themeRichText")
+            if rich_text:
+                label.setText(rich_text.replace("<a ", f'<a style="color:{self.colors["accent"]}" '))
+            name = label.property("themeIcon")
+            if name:
+                source = resource_path(f"icons/{name}.svg").read_text(encoding="utf-8")
+                renderer = QSvgRenderer(QByteArray(source.replace("currentColor", self.colors["accent"]).encode()))
+                scale = window.devicePixelRatioF()
+                pixmap = QPixmap(round(24 * scale), round(24 * scale))
+                pixmap.fill(Qt.GlobalColor.transparent)
+                painter = QPainter(pixmap)
+                renderer.render(painter)
+                painter.end()
+                pixmap.setDevicePixelRatio(scale)
+                label.setPixmap(pixmap)
+
     def _configured(self, module: str) -> None:
         if module == "appearance":
             self.mode = self.configuration.get("appearance")["theme"]
             self.apply()
 
     def _system_changed(self, _scheme) -> None:
-        if self.mode == "system":
+        if not self._syncing_scheme:
             self.apply()
 
     def apply(self) -> None:
+        hints = self.application.styleHints()
+        if self._scheme_mode != self.mode:
+            self._syncing_scheme = True
+            try:
+                schemes = {"system": Qt.ColorScheme.Unknown, "light": Qt.ColorScheme.Light, "dark": Qt.ColorScheme.Dark}
+                hints.setColorScheme(schemes[self.mode])
+                self._scheme_mode = self.mode
+            finally:
+                self._syncing_scheme = False
         dark = self.application.styleHints().colorScheme() == Qt.ColorScheme.Dark
         name = effective_theme(self.mode, dark)
         if name == self.current:
@@ -169,11 +249,17 @@ class ThemeManager(QObject):
                  "AlternateBase": "alternate", "Text": "text", "Button": "surface",
                  "ButtonText": "text", "Highlight": "selected", "HighlightedText": "text",
                  "ToolTipBase": "surface", "ToolTipText": "text", "PlaceholderText": "muted",
-                 "Link": "accent", "LinkVisited": "accent"}
+                 "Link": "accent", "LinkVisited": "accent", "Light": "surface",
+                 "Midlight": "alternate", "Mid": "border", "Dark": "border", "Shadow": "background",
+                 "Accent": "accent", "BrightText": "button_text"}
         for role, token in roles.items():
             palette.setColor(getattr(QPalette.ColorRole, role), QColor(colors[token]))
         for role in (QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText, QPalette.ColorRole.WindowText):
             palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(colors["disabled"]))
+        for role in (QPalette.ColorRole.Base, QPalette.ColorRole.Button):
+            palette.setColor(QPalette.ColorGroup.Disabled, role, QColor(colors["alternate"]))
+        palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Highlight, QColor(colors["alternate"]))
+        palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.HighlightedText, QColor(colors["disabled"]))
         self.application.setPalette(palette)
         icons = {key: resource_path(f"icons/{key}-{self.current}.svg").as_posix()
                  for key in ("chevron", "check", "up")}

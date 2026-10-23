@@ -61,6 +61,7 @@ class WeatherView(QWidget):
         self.tabs.addTab(self.history, "历史 · 归档预报")
         layout.addWidget(self.tabs, 1)
         source = QLabel('天气数据：<a href="https://open-meteo.com/">Open-Meteo</a> · CC BY 4.0 · 时间为地点当地时间')
+        source.setProperty("themeRichText", source.text())
         source.setOpenExternalLinks(True)
         source.setObjectName("Muted")
         layout.addWidget(source)

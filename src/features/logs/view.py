@@ -1,12 +1,12 @@
-from html import escape
 import logging
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QTextCharFormat, QTextCursor
-from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QMessageBox, QPushButton, QSizePolicy, QTextEdit, QWidget
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QMessageBox, QPushButton, QSizePolicy, QAbstractItemView, QApplication, QHeaderView, QTableView, QWidget
 
 from src.features.logs.view_model import LogsViewModel
-from src.shared.widgets import choice_box, page_layout, plain_label
+from src.features.logs.table_model import LogTableModel
+from src.shared.widgets import NavigationDelegate, choice_box, page_layout, plain_label
 from src.shared.theme import ThemeManager
 
 
@@ -29,6 +29,7 @@ class LogsView(QWidget):
         open_folder = QPushButton("打开日志位置")
         open_folder.clicked.connect(self._open_folder)
         self.clear_files = QPushButton("清除全部日志")
+        self.clear_files.setObjectName("Danger")
         self.clear_files.setToolTip("删除历史文件并清空当前日志；后续仍继续记录。不可撤销。")
         self.clear_files.clicked.connect(self._confirm_clear)
         files.addWidget(self.sessions, 1)
@@ -53,17 +54,32 @@ class LogsView(QWidget):
         actions.addWidget(self.follow)
         actions.addWidget(clear)
         layout.addLayout(actions)
-        self.console = QTextEdit()
-        self.console.setObjectName("LogConsole")
-        self.console.setReadOnly(True)
-        self.console.setAcceptRichText(False)
-        self.console.document().setMaximumBlockCount(model.configuration.get("logging")["maximum_lines"])
-        self.console.setPlaceholderText("暂无日志")
+        self.console = QTableView()
+        self.table_model = LogTableModel(themes, model.configuration.get("logging")["maximum_lines"], self)
+        self.console.setModel(self.table_model)
+        self.console.setItemDelegate(NavigationDelegate(self.console))
+        self.console.setAlternatingRowColors(True)
+        self.console.setShowGrid(False)
+        self.console.setWordWrap(False)
+        self.console.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.console.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.console.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerItem)
+        self.console.verticalHeader().hide()
+        self.console.verticalHeader().setDefaultSectionSize(32)
+        header = self.console.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        for column, width in enumerate((90, 180, 210, 260)):
+            self.console.setColumnWidth(column, width)
+        self.console.setToolTip("选中行后按 Ctrl+C 复制；悬停单元格查看完整内容。")
+        copy = QShortcut(QKeySequence.StandardKey.Copy, self.console)
+        copy.activated.connect(self._copy_rows)
         layout.addWidget(self.console, 1)
         model.appended.connect(self.append)
         model.replaced.connect(self.replace)
-        model.limit_changed.connect(self.console.document().setMaximumBlockCount)
-        themes.changed.connect(self._theme_changed)
+        model.limit_changed.connect(self.table_model.set_limit)
+        self.follow.toggled.connect(lambda checked: self.console.scrollToBottom() if checked else None)
         model.files_changed.connect(self._files_changed)
         model.management_changed.connect(self._management_changed)
 
@@ -116,35 +132,27 @@ class LogsView(QWidget):
         if result == QMessageBox.StandardButton.Yes:
             self.model.clear_all_files()
 
-    def _theme_changed(self) -> None:
-        previous = self.console.verticalScrollBar().value()
-        self.model.refresh_view()
-        if not self.follow.isChecked():
-            self.console.verticalScrollBar().setValue(previous)
+    def _copy_rows(self) -> None:
+        rows = sorted(index.row() for index in self.console.selectionModel().selectedRows())
+        entries = [self.table_model.entries[row] for row in rows]
+        if entries:
+            QApplication.clipboard().setText("\n".join("\t".join((entry.level, entry.timestamp, entry.source, entry.message)) for entry in entries))
 
     def replace(self, entries: tuple) -> None:
-        self.console.clear()
-        self.append(entries)
+        previous = self.console.verticalScrollBar().value()
+        self.table_model.replace(entries)
+        if self.follow.isChecked():
+            self.console.scrollToBottom()
+        else:
+            self.console.verticalScrollBar().setValue(previous)
 
     def append(self, entries: tuple) -> None:
-        if not entries:
-            return
-        scroll = self.console.verticalScrollBar()
-        previous = scroll.value()
-        cursor = self.console.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        palette = self.themes.colors
-        colors = {"INFO": palette["success"], "DEBUG": palette["muted"], "WARNING": palette["warning"], "ERROR": palette["error"], "CRITICAL": palette["error"]}
-        for entry in entries:
-            if not self.console.document().isEmpty():
-                cursor.insertBlock()
-            if entry.source:
-                cursor.insertHtml(f'<b style="color:{colors.get(entry.level, palette["text"])}">[{escape(entry.level)}]</b> ')
-            normal = QTextCharFormat()
-            normal.setForeground(QColor(palette["text"]))
-            cursor.setCharFormat(normal)
-            cursor.insertText(f"{entry.timestamp} | {entry.source} | {entry.message}" if entry.source else entry.message)
-        scroll.setValue(scroll.maximum() if self.follow.isChecked() else previous)
+        previous = self.console.verticalScrollBar().value()
+        removed = self.table_model.append(entries)
+        if self.follow.isChecked():
+            self.console.scrollToBottom()
+        else:
+            self.console.verticalScrollBar().setValue(max(0, previous - removed))
 
     def showEvent(self, event) -> None:
         super().showEvent(event)

@@ -14,13 +14,8 @@ class NavigationDelegate(QStyledItemDelegate):
 
 
 def choice_box() -> QComboBox:
-    """强制使用可统一样式的列表弹层，保留键盘选择能力。"""
+    """使用 Qt 默认列表、委托和弹层交互。"""
     combo = QComboBox()
-    view = QListView(combo)
-    view.setItemDelegate(NavigationDelegate(view))
-    view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-    view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-    combo.setView(view)
     combo.setMinimumWidth(140)
     combo.setMaxVisibleItems(12)
     return combo
@@ -35,13 +30,17 @@ def page_layout(page: QWidget, title: str, subtitle: str) -> QVBoxLayout:
     hint = QLabel(subtitle)
     hint.setObjectName("Muted")
     hint.setWordWrap(True)
-    layout.addWidget(heading)
-    layout.addWidget(hint)
+    header = QVBoxLayout()
+    header.setSpacing(4)
+    header.addWidget(heading)
+    header.addWidget(hint)
+    layout.addLayout(header)
     return layout
 
 
 def data_table(headers: tuple[str, ...]) -> QTableWidget:
     table = QTableWidget(0, len(headers))
+    table.setItemDelegate(NavigationDelegate(table))
     table.setHorizontalHeaderLabels(headers)
     table.verticalHeader().hide()
     table.setAlternatingRowColors(True)

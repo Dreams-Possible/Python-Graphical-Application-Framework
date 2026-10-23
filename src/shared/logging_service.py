@@ -4,6 +4,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import os
 from pathlib import Path
 from threading import Lock
 
@@ -46,6 +47,23 @@ class _BufferHandler(logging.Handler):
             return result
 
 
+class TerminalFormatter(logging.Formatter):
+    """仅对终端等级标签着色，不修改共享 LogRecord 或文件内容。"""
+    COLORS = {"DEBUG": "90", "INFO": "32", "WARNING": "33", "ERROR": "31", "CRITICAL": "35"}
+
+    def __init__(self, stream) -> None:
+        super().__init__("[%(levelname)s] | %(asctime)s | %(threadName)s | %(name)s | %(message)s")
+        self.colored = bool(getattr(stream, "isatty", lambda: False)()) and "NO_COLOR" not in os.environ
+
+    def format(self, record) -> str:
+        text = super().format(record)
+        color = self.COLORS.get(record.levelname)
+        if self.colored and color:
+            label = f"[{record.levelname}]"
+            return f"\033[{color}m{label}\033[0m" + text[len(label):]
+        return text
+
+
 class LoggingService:
     def __init__(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
@@ -58,7 +76,7 @@ class LoggingService:
         self.terminal = logging.StreamHandler()
         formatter = logging.Formatter("[%(levelname)s] | %(asctime)s | %(threadName)s | %(name)s | %(message)s")
         self.file.setFormatter(formatter)
-        self.terminal.setFormatter(formatter)
+        self.terminal.setFormatter(TerminalFormatter(self.terminal.stream))
         self.handlers = (self.file, self.terminal, self.buffer)
         for handler in self.handlers:
             self.logger.addHandler(handler)

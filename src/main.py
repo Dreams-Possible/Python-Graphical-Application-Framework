@@ -18,7 +18,6 @@ def main() -> int:
     app.setApplicationName(APP_ID)
     app.setApplicationDisplayName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
-    app.setStyle("Fusion")
     themes = ThemeManager(app)
     logs = None
     try:
