@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "values": {
+    "enabled": true,
+    "use_for_clock": true,
+    "use_for_weather": true,
+    "endpoint": "https://ipwho.is/",
+    "timeout_seconds": 8
+  }
+}

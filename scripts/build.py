@@ -1,6 +1,7 @@
 """使用项目虚拟环境中的 PyInstaller 构建单文件可执行程序。"""  # 说明本脚本只负责准备环境和执行打包。
 
 from pathlib import Path  # 用统一的路径对象定位项目文件。
+import os
 import subprocess  # 用于调用环境准备入口和 PyInstaller。
 import sys  # 用于取得运行本脚本的 Python 解释器。
 
@@ -41,6 +42,8 @@ def main() -> int:  # 定义构建入口，并用整数表示最终退出状态�
         "--windowed",  # 生成不显示命令行窗口的图形界面程序。
         "--onefile",  # 将应用及其依赖打包为单个可执行文件。
         "--noconfirm",  # 自动覆盖既有构建产物而不等待交互确认。
+        "--add-data",
+        f"{PROJECT_ROOT / 'assets'}{os.pathsep}assets",  # 默认配置是只读发布资源。
         "--paths",  # 声明额外的 Python 模块搜索路径。
         str(PROJECT_ROOT),  # 让 PyInstaller 能发现 src 和 version 两个项目包。
         "--specpath",  # 指定自动生成的 PyInstaller spec 文件目录。

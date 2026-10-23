@@ -1,0 +1,4 @@
+{
+  "schema_version": 1,
+  "values": {"level": "INFO", "maximum_lines": 2000, "flush_ms": 500, "keep_files": 20}
+}

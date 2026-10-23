@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "values": {
+    "provider": "open_meteo", "forecast_url": "https://api.open-meteo.com/v1/forecast",
+    "geocoding_url": "https://geocoding-api.open-meteo.com/v1/search",
+    "location_name": "上海", "latitude": 31.2304, "longitude": 121.4737,
+    "forecast_days": 16, "history_days": 3, "refresh_minutes": 30,
+    "timeout_seconds": 10, "auto_refresh": true, "search_query": "上海"
+  }
+}
