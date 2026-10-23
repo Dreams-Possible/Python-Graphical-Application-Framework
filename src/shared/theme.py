@@ -29,6 +29,11 @@ STYLE = Template("""
 * { font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans CJK SC', 'PingFang SC', sans-serif;
     font-size: 14px; color: $text; }
 QMainWindow, QDialog, QMessageBox { background: $background; }
+QFrame#ModuleIsland { background: $surface; border: 1px solid $border; border-radius: 20px; }
+QPushButton#IslandTab { background: transparent; color: $muted; border: 0; border-radius: 15px; padding: 8px 24px; }
+QPushButton#IslandTab:hover { background: $hover; color: $text; }
+QPushButton#IslandTab:checked { background: $selected; color: $accent; font-weight: 600; }
+QPushButton#IslandTab:focus { color: $accent; }
 QWidget#Sidebar { background: $surface; border-right: 1px solid $border; }
 QLabel { background: transparent; }
 QLabel#Brand { font-size: 16px; font-weight: 600; color: $text; }
@@ -41,10 +46,11 @@ QLabel#Muted { color: $muted; font-size: 12px; }
 QLabel#Status { color: $success; font-weight: 600; }
 QLabel#Status[failed='true'], QLabel#Error { color: $error; }
 QLabel#Error { background: $error_surface; padding: 10px; border-radius: 8px; }
-QLabel#ClockDigits { font-family: 'SFMono-Regular', 'Cascadia Mono', 'DejaVu Sans Mono', monospace;
-    font-size: 64px; font-weight: 500; color: $accent; }
+QLabel#ClockDigits { font-family: 'Cascadia Mono', 'Consolas', 'SFMono-Regular', 'DejaVu Sans Mono', monospace;
+    font-size: 64px; font-weight: 500; color: $accent; min-height: 88px; padding: 6px 4px 10px 4px; }
 QLabel#Temperature { font-size: 38px; font-weight: 600; color: $accent; }
-QFrame#Card, QFrame#ClockCard { background: $surface; border: 1px solid $border; border-radius: 14px; }
+QFrame#Card { background: $surface; border: 1px solid $border; border-radius: 14px; }
+QFrame#ClockCard { background: transparent; border: 0; }
 QPushButton { background: $surface; border: 1px solid $border; border-radius: 8px; padding: 9px 14px; }
 QPushButton:hover { background: $hover; border-color: $accent; }
 QPushButton:pressed { background: $selected; }
@@ -111,6 +117,10 @@ QTabBar::tab:selected { color: $accent; border-bottom: 2px solid $accent; }
 QTextEdit#LogConsole { background: $surface; color: $text; border: 1px solid $border;
     border-radius: 10px; padding: 12px; selection-background-color: $selected; selection-color: $text;
     font-family: 'Cascadia Mono', 'SFMono-Regular', 'DejaVu Sans Mono', monospace; font-size: 12px; }
+QListWidget#LocationResults { background: $surface; color: $text; border: 1px solid $border; border-radius: 8px; padding: 4px; outline: 0; }
+QListWidget#LocationResults::item { padding: 9px 12px; border-radius: 5px; }
+QListWidget#LocationResults::item:hover { background: $hover; }
+QListWidget#LocationResults::item:selected { background: $selected; color: $accent; }
 QListWidget#SettingsCategories { background: transparent; border: 0; outline: 0; }
 QListWidget#SettingsCategories::item { min-height: 24px; padding: 10px 14px;
     margin: 3px 0; border: 1px solid transparent; border-radius: 8px; }

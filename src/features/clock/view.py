@@ -4,6 +4,8 @@ from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
 from src.features.clock.view_model import ClockState, ClockViewModel
+from src.shared.island import IslandPages
+from src.features.clock.timer_view import TimerView
 from src.shared.widgets import page_layout, plain_label
 
 
@@ -12,6 +14,13 @@ class ClockView(QWidget):
         super().__init__()
         self.model = model
         layout = page_layout(self, "时钟", "从网络校准时间，让每一天从准确的节奏开始。")
+        clock_page = QWidget()
+        clock_layout = QVBoxLayout(clock_page)
+        clock_layout.setContentsMargins(0, 0, 0, 0)
+        clock_layout.setSpacing(16)
+        self.timer_view = TimerView()
+        self.sections = IslandPages((("时钟", clock_page), ("计时器", self.timer_view)))
+        layout.addWidget(self.sections, 1)
         card = QFrame()
         card.setObjectName("ClockCard")
         inner = QVBoxLayout(card)
@@ -35,10 +44,11 @@ class ClockView(QWidget):
         actions.addWidget(self.sync)
         actions.addWidget(self.cancel)
         actions.addStretch()
-        layout.addStretch()
-        layout.addWidget(card)
-        layout.addLayout(actions)
-        layout.addStretch()
+        clock_layout.addStretch()
+        card.setMaximumWidth(820)
+        clock_layout.addWidget(card, 0, Qt.AlignmentFlag.AlignHCenter)
+        clock_layout.addLayout(actions)
+        clock_layout.addStretch()
         model.changed.connect(self.render)
         self.render(model.state)
 
