@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QVBoxLayout, QWi
 from src.features.clock.view_model import ClockState, ClockViewModel
 from src.shared.island import IslandPages
 from src.features.clock.timer_view import TimerView
+from src.features.clock.stopwatch_view import StopwatchView
 from src.shared.widgets import page_layout, plain_label
 
 
@@ -19,7 +20,8 @@ class ClockView(QWidget):
         clock_layout.setContentsMargins(0, 0, 0, 0)
         clock_layout.setSpacing(16)
         self.timer_view = TimerView()
-        self.sections = IslandPages((("时钟", clock_page), ("计时器", self.timer_view)))
+        self.stopwatch_view = StopwatchView()
+        self.sections = IslandPages((("时钟", clock_page), ("秒表", self.stopwatch_view), ("计时器", self.timer_view)))
         layout.addWidget(self.sections, 1)
         card = QFrame()
         card.setObjectName("ClockCard")
