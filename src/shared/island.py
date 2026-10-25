@@ -1,17 +1,20 @@
 """模块内浮岛导航：页面横向排列，由 Qt 属性动画平移切换。"""
 from PySide6.QtCore import QEvent, QPoint, QPropertyAnimation, QEasingCurve, Qt
-from PySide6.QtWidgets import QWidget, QFrame, QPushButton, QButtonGroup, QHBoxLayout, QVBoxLayout
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QWidget, QFrame, QPushButton, QButtonGroup, QHBoxLayout, QVBoxLayout, QGraphicsDropShadowEffect
 
 
 class IslandPages(QWidget):
-    def __init__(self, pages, parent=None):
+    def __init__(self, pages, parent=None, floating=False):
         super().__init__(parent)
+        self.floating = floating
         self.pages = [page for title, page in pages]
         self.current = 0
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 8)
+        layout.setContentsMargins(0, 0, 0, 0 if floating else 8)
         layout.setSpacing(18)
-        island = QFrame()
+        island = QFrame(self)
+        self.island = island
         island.setObjectName("ModuleIsland")
         row = QHBoxLayout(island)
         row.setContentsMargins(5, 5, 5, 5)
@@ -30,7 +33,15 @@ class IslandPages(QWidget):
         self.viewport = QWidget()
         self.viewport.installEventFilter(self)
         layout.addWidget(self.viewport, 1)
-        layout.addWidget(island, 0, Qt.AlignmentFlag.AlignHCenter)
+        if floating:
+            # 仅胶囊接收鼠标事件，周围区域仍由下方内容处理滚动和点击。
+            shadow = QGraphicsDropShadowEffect(island)
+            shadow.setBlurRadius(22)
+            shadow.setOffset(0, 4)
+            shadow.setColor(QColor(0, 0, 0, 45))
+            island.setGraphicsEffect(shadow)
+        else:
+            layout.addWidget(island, 0, Qt.AlignmentFlag.AlignHCenter)
         self.strip = QWidget(self.viewport)
         for page in self.pages:
             page.setParent(self.strip)
@@ -73,3 +84,7 @@ class IslandPages(QWidget):
             page.setGeometry(index * width, 0, width, height)
         self.strip.move(-self.current * width, 0)
         self._settled()
+        if self.floating:
+            self.island.adjustSize()
+            self.island.move(max(0, (self.width() - self.island.width()) // 2), max(0, self.height() - self.island.height() - 16))
+            self.island.raise_()

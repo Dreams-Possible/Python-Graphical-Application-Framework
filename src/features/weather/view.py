@@ -1,12 +1,13 @@
-"""天气详情与地点选择；表格仅在数据快照变化时重新填充。"""
+"""天气详情与地点选择；纵向展示当前天气、小时趋势及每日预报。"""
 
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtWidgets import QListWidget, QAbstractItemView, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTabWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QListWidget, QAbstractItemView, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from src.shared.island import IslandPages
 from src.features.weather.models import WeatherState
 from src.features.weather.view_model import WeatherViewModel
-from src.shared.widgets import NavigationDelegate, data_table, page_layout, plain_label, populate
+from src.shared.widgets import NavigationDelegate, page_layout, plain_label
+from src.features.weather.forecast_view import ForecastGraphic, WeatherSymbol
 
 
 class WeatherDetails(QWidget):
@@ -14,32 +15,60 @@ class WeatherDetails(QWidget):
     def __init__(self):
         super().__init__()
         self._report = None
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        outer.addWidget(self.scroll)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 12, 96)
         layout.setSpacing(16)
+        self.scroll.setWidget(content)
         card = QFrame()
         card.setObjectName("Card")
         card_layout = QHBoxLayout(card)
         card_layout.setContentsMargins(24, 20, 24, 20)
         self.temperature = plain_label("—", "Temperature")
+        self.symbol = WeatherSymbol()
         self.summary = plain_label("尚无天气数据\n可搜索地点，或直接刷新默认地点。", "SectionTitle")
+        self.summary.setWordWrap(True)
         card_layout.addWidget(self.temperature)
+        card_layout.addWidget(self.symbol)
         card_layout.addSpacing(24)
         card_layout.addWidget(self.summary, 1)
         layout.addWidget(card)
-        self.tabs = QTabWidget()
-        self.hours = data_table(("当地时间", "天气", "温度", "体感", "湿度", "降水概率", "降水量", "风速"))
-        self.days = data_table(("日期", "天气", "最低", "最高", "降水概率", "降水量", "最大风速"))
-        self.history = data_table(("日期", "天气", "最低", "最高", "降水概率", "降水量", "最大风速"))
-        self.tabs.addTab(self.hours, "未来 24 小时")
-        self.tabs.addTab(self.days, "每日预报")
-        self.tabs.addTab(self.history, "历史 · 归档预报")
-        layout.addWidget(self.tabs, 1)
+        self.hours = ForecastGraphic(hourly=True)
+        self.days = ForecastGraphic()
+        self.history = ForecastGraphic()
+        self.section_titles = []
+        for title, graphic in (("未来 24 小时", self.hours), ("每日预报", self.days), ("历史 · 归档预报", self.history)):
+            section = QFrame()
+            section.setObjectName("Card")
+            section_layout = QVBoxLayout(section)
+            section_layout.setContentsMargins(20, 16, 20, 16)
+            heading = plain_label(title, "SectionTitle")
+            self.section_titles.append(heading)
+            section_layout.addWidget(heading)
+            if graphic.hourly:
+                section_layout.addWidget(plain_label("温度趋势 · 降水概率 · 风速，左右滚动；点击列展开详情，再次点击收起", "Muted"))
+            else:
+                section_layout.addWidget(plain_label("最高 / 最低温度趋势 · 降水 · 风速，左右滚动；点击列展开详情，再次点击收起", "Muted"))
+            scroller = QScrollArea()
+            scroller.setWidgetResizable(True)
+            scroller.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            scroller.setWidget(graphic)
+            scroller.viewport().setAutoFillBackground(False)
+            section_layout.addWidget(scroller)
+            layout.addWidget(section)
+        self.forecast_scrollers = content.findChildren(QScrollArea)
+        self._resize_forecasts()
         source = QLabel('天气数据：<a href="https://open-meteo.com/">Open-Meteo</a> · CC BY 4.0 · 时间为地点当地时间')
         source.setProperty("themeRichText", source.text())
         source.setOpenExternalLinks(True)
         source.setObjectName("Muted")
         layout.addWidget(source)
+        layout.addStretch()
 
     def render(self, state):
         if state.report == self._report:
@@ -47,18 +76,29 @@ class WeatherDetails(QWidget):
         self._report = state.report
         if state.report is None:
             self.temperature.setText("—")
+            self.symbol.set_condition("")
+            self.section_titles[1].setText("每日预报")
+            self.section_titles[2].setText("历史 · 归档预报")
             self.summary.setText("尚无当前地点的天气数据")
             for table in (self.hours, self.days, self.history):
-                table.setRowCount(0)
+                table.set_rows(())
+            self._resize_forecasts()
             return
         report = state.report
         self.temperature.setText(report.temperature)
+        self.symbol.set_condition(report.condition)
         self.summary.setText(f"{report.location} · {report.condition}\n湿度 {report.humidity}   风速 {report.wind}\n{report.observed_at} · {report.timezone}")
-        populate(self.hours, report.hourly)
-        populate(self.days, report.daily)
-        populate(self.history, report.history)
-        self.tabs.setTabText(1, f"每日预报 · {len(report.daily)} 天")
-        self.tabs.setTabText(2, f"历史 · {len(report.history)} 天归档")
+        self.hours.set_rows(report.hourly, report.observed_at[5:13] + ":00")
+        self.days.set_rows(report.daily, report.observed_at[:10])
+        self.history.set_rows(report.history)
+        self.section_titles[1].setText(f"每日预报 · {len(report.daily)} 天")
+        self.section_titles[2].setText(f"历史 · {len(report.history)} 天归档")
+        self._resize_forecasts()
+
+    def _resize_forecasts(self):
+        for scroller in self.forecast_scrollers:
+            scroller.setFixedHeight(scroller.widget().height() + 18)
+
 
 
 
@@ -76,7 +116,7 @@ class WeatherView(QWidget):
         for inner in (weather_layout, search_layout):
             inner.setContentsMargins(0, 0, 0, 0)
             inner.setSpacing(16)
-        self.sections = IslandPages((("当前天气", weather_page), ("搜索地点", search_page)))
+        self.sections = IslandPages((("当前天气", weather_page), ("搜索地点", search_page)), floating=True)
         layout.addWidget(self.sections, 1)
         search_panel = QWidget()
         search_panel.setMaximumWidth(760)
