@@ -11,5 +11,6 @@
   "common.application": "Daily Dashboard",
   "common.format.short_date": "MM/dd",
   "common.format.time": "HH:mm:ss",
-  "common.format.time_minutes": "HH:mm"
+  "common.format.time_minutes": "HH:mm",
+  "common.swipe_pages_hint": "Swipe the page left or right. Charts and input controls keep their own gestures."
 }

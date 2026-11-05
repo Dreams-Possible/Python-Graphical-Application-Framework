@@ -1,22 +1,23 @@
 """模块内浮岛导航：页面横向排列，由 Qt 属性动画平移切换。"""
 from src.shared.widgets import text_button
-from PySide6.QtCore import QEvent, QPoint, QPropertyAnimation, QEasingCurve, Qt
+from src.shared.gestures import SwipePages
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QWidget, QFrame, QPushButton, QButtonGroup, QHBoxLayout, QVBoxLayout, QGraphicsDropShadowEffect
 
 
-class IslandPages(QWidget):
+class IslandPages(SwipePages):
     def __init__(self, pages, parent=None, floating=False, texts=None):
-        super().__init__(parent)
+        super().__init__([page for title, page in pages], parent)
         self.floating = floating
-        self.pages = [page for title, page in pages]
-        self.current = 0
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0 if floating else 8)
         layout.setSpacing(18)
         island = QFrame(self)
         self.island = island
         island.setObjectName("ModuleIsland")
+        if texts:
+            texts.bind_text(island, "common.swipe_pages_hint", setter="setToolTip")
         row = QHBoxLayout(island)
         row.setContentsMargins(5, 5, 5, 5)
         row.setSpacing(4)
@@ -31,8 +32,6 @@ class IslandPages(QWidget):
             row.addWidget(button)
             self.buttons.append(button)
         self.buttons[0].setChecked(True)
-        self.viewport = QWidget()
-        self.viewport.installEventFilter(self)
         layout.addWidget(self.viewport, 1)
         if floating:
             # 仅胶囊接收鼠标事件，周围区域仍由下方内容处理滚动和点击。
@@ -43,49 +42,23 @@ class IslandPages(QWidget):
             island.setGraphicsEffect(shadow)
         else:
             layout.addWidget(island, 0, Qt.AlignmentFlag.AlignHCenter)
-        self.strip = QWidget(self.viewport)
-        for page in self.pages:
-            page.setParent(self.strip)
-        self.animation = QPropertyAnimation(self.strip, b"pos", self)
-        self.animation.setDuration(260)
-        self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
-        self.animation.finished.connect(self._settled)
+        self.currentChanged.connect(self._sync_buttons)
+        island.installEventFilter(self)
 
-    def select(self, index):
-        if index == self.current:
-            return
-        self.animation.stop()
-        self.current = index
+    def _sync_buttons(self, index):
         self.buttons[index].setChecked(True)
-        for page in self.pages:
-            page.show()
-        self.buttons[index].setFocus()
-        self.animation.setStartValue(self.strip.pos())
-        self.animation.setEndValue(QPoint(-index * self.viewport.width(), 0))
-        self.animation.start()
-
-    def _settled(self):
-        for index, page in enumerate(self.pages):
-            page.setVisible(index == self.current)
 
     def eventFilter(self, watched, event):
-        if watched is self.viewport and event.type() == QEvent.Type.Resize and hasattr(self, "animation"):
-            self._resize_pages()
+        if watched is getattr(self, "island", None) and event.type() == QEvent.Type.LayoutRequest:
+            self._position_island()
         return super().eventFilter(watched, event)
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._resize_pages()
-
     def _resize_pages(self):
-        self.animation.stop()
-        width, height = self.viewport.width(), self.viewport.height()
-        self.strip.resize(width * len(self.pages), height)
-        for index, page in enumerate(self.pages):
-            page.setGeometry(index * width, 0, width, height)
-        self.strip.move(-self.current * width, 0)
-        self._settled()
-        if self.floating:
+        super()._resize_pages()
+        self._position_island()
+
+    def _position_island(self):
+        if getattr(self, "floating", False) and hasattr(self, "island"):
             self.island.adjustSize()
             self.island.move(max(0, (self.width() - self.island.width()) // 2), max(0, self.height() - self.island.height() - 16))
             self.island.raise_()

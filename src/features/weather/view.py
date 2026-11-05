@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import QListWidget, QAbstractItemView, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from src.shared.island import IslandPages
+from src.shared.gestures import KineticScrollArea
 from src.features.weather.models import WeatherState
 from src.features.weather.view_model import WeatherViewModel
 from src.shared.widgets import NavigationDelegate, page_layout, plain_label, text_label, text_button
@@ -19,7 +20,7 @@ class WeatherDetails(QWidget):
         self._report = None
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        self.scroll = QScrollArea()
+        self.scroll = KineticScrollArea()
         self.scroll.setWidgetResizable(True)
         outer.addWidget(self.scroll)
         content = QWidget()
@@ -56,7 +57,7 @@ class WeatherDetails(QWidget):
                 section_layout.addWidget(text_label(texts, "weather.hint.hours", "Muted"))
             else:
                 section_layout.addWidget(text_label(texts, "weather.hint.days", "Muted"))
-            scroller = QScrollArea()
+            scroller = KineticScrollArea(Qt.Orientation.Horizontal)
             scroller.setWidgetResizable(True)
             scroller.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             scroller.setWidget(graphic)
@@ -110,7 +111,6 @@ class WeatherDetails(QWidget):
     def _resize_forecasts(self):
         for scroller in self.forecast_scrollers:
             scroller.setFixedHeight(scroller.widget().height() + 18)
-
 
 
 

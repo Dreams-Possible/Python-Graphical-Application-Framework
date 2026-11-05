@@ -11,5 +11,6 @@
   "common.application": "日常信息台",
   "common.format.short_date": "MM-dd",
   "common.format.time": "HH:mm:ss",
-  "common.format.time_minutes": "HH:mm"
+  "common.format.time_minutes": "HH:mm",
+  "common.swipe_pages_hint": "左右滑动内容区切换页面；图表和输入控件保留自身操作。"
 }

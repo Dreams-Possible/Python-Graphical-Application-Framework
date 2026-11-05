@@ -22,6 +22,13 @@ class UiMetrics:
     about_height: int = 310
     about_brand_size: int = 64
     about_margin: int = 32
+    page_slide_ms: int = 260
+    swipe_distance_ratio: float = 0.22
+    swipe_min_distance: int = 48
+    swipe_max_distance: int = 180
+    swipe_velocity: int = 650
+    swipe_axis_bias: float = 1.15
+    swipe_edge_resistance: float = 0.22
 
     @property
     def navigation_row_height(self):

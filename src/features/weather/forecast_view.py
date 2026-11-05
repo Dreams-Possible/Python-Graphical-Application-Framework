@@ -4,6 +4,7 @@ import math
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QPainter, QPainterPath, QPalette, QPen
 from PySide6.QtWidgets import QWidget
+from src.shared.gestures import DragClickWidget
 from src.features.weather.presentation import condition as condition_text, forecast_row
 
 
@@ -80,7 +81,7 @@ class WeatherSymbol(QWidget):
         weather_icon(painter, QRectF(4, 4, 56, 56), self.condition, self.palette().color(QPalette.ColorRole.Accent))
 
 
-class ForecastGraphic(QWidget):
+class ForecastGraphic(DragClickWidget):
     """统一横向趋势列；仅当前小时和今天使用主题高亮背景。"""
     COLUMN_WIDTH = 104
     EXPANDED_WIDTH = 280
@@ -92,6 +93,7 @@ class ForecastGraphic(QWidget):
         texts.changed.connect(self.retranslate)
         self.rows = ()
         self._hovered_index = -1
+        self.clickReleased.connect(self._click_column)
         self.current_index = -1
         self.selected_index = -1
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -100,6 +102,7 @@ class ForecastGraphic(QWidget):
         self.set_rows(())
 
     def set_rows(self, rows, current_key=""):
+        self.cancel_click()
         self.selected_index = -1
         self.rows = rows
         self.current_index = next((index for index, row in enumerate(rows) if (row.when.strftime("%m-%d %H:%M") if self.hourly else row.when.date().isoformat()) == current_key), -1)
@@ -161,7 +164,7 @@ class ForecastGraphic(QWidget):
                     painter.drawText(QRectF(detail_left + 4, y + 18, 148, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, value)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(accent if index == self.current_index else muted)
-            title = (self.texts.get("weather.current_hour") if index == self.current_index else row[0]) if self.hourly else daily_title(point_data.when.date(), self.texts, index == self.current_index)
+            title = self.column_title(index)
             painter.drawText(QRectF(x - 48, 8, 96, 22), align, title)
             weather_icon(painter, QRectF(x - 18, 38, 36, 36), point_data.weather_code, accent)
             painter.setPen(text)
@@ -189,6 +192,10 @@ class ForecastGraphic(QWidget):
             painter.setPen(muted)
             painter.drawText(QRectF(x - 48, 206 + offset, 96, 22), align, self.texts.get("weather.rain_value", value=row[5 if self.hourly else 4]))
             painter.drawText(QRectF(x - 48, 236 + offset, 96, 22), align, row[7 if self.hourly else 6])
+
+    def column_title(self, index):
+        point = self.rows[index]
+        return self.texts.time(point.when, seconds=False) if self.hourly else daily_title(point.when.date(), self.texts, index == self.current_index)
 
     def _column_rect(self, index):
         left = index * self.COLUMN_WIDTH
@@ -218,17 +225,18 @@ class ForecastGraphic(QWidget):
         self._resize_columns()
 
     def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self.setToolTip("")
+            return
         index = self._index_at(event.position())
         self._hovered_index = index
         self.setToolTip("\n".join(forecast_row(self.rows[index], self.hourly, self.texts)) if index >= 0 else "")
-        super().mouseMoveEvent(event)
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._toggle_details(self._index_at(event.position()))
-            event.accept()
-        else:
-            super().mousePressEvent(event)
+    def _click_column(self, origin, position):
+        index = self._index_at(position)
+        if index >= 0 and index == self._index_at(origin):
+            self._toggle_details(index)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:

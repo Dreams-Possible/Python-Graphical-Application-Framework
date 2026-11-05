@@ -6,6 +6,7 @@ import logging
 
 from PySide6.QtCore import QSignalBlocker, QSize, Qt, QUrl
 from src.shared.ui_metrics import UI
+from src.shared.gestures import KineticScrollArea
 from src.shared.localization import message
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
@@ -52,7 +53,7 @@ class SettingsView(QWidget):
         form_layout.addWidget(self.description)
         self.open_configuration = text_button(texts, "settings.open_config")
         self.open_configuration.clicked.connect(self._open_configuration)
-        self.scroll = QScrollArea()
+        self.scroll = KineticScrollArea()
         self.scroll.setWidgetResizable(True)
         form_layout.addWidget(self.scroll, 1)
         self.configuration_path = plain_label(name="Muted")
