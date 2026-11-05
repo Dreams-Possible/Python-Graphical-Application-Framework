@@ -8,6 +8,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from src.app.bootstrap import create_main_window
 from src.shared.theme import ThemeManager
+from src.shared.localization import Localization
+from src.shared.errors import error_message
 from src.shared.logging_service import LoggingService
 from src.shared.paths import UserPaths
 from version import APP_ID, APP_NAME, APP_VERSION
@@ -20,22 +22,25 @@ def main() -> int:
     app.setApplicationVersion(APP_VERSION)
     themes = ThemeManager(app)
     logs = None
+    texts = None
     try:
+        texts = Localization()
+        texts.bind_text(app, "app.brand", setter="setApplicationDisplayName")
         paths = UserPaths.discover()
         paths.ensure()
         logs = LoggingService(paths.logs)
         logging.getLogger("workbench.app").info("应用启动，版本 %s", APP_VERSION)
         logging.getLogger("workbench.app").info("用户目录就绪：配置=%s，数据=%s，缓存=%s，日志=%s", paths.config, paths.data, paths.cache, paths.logs)
-        window = create_main_window(paths, logs, themes)
+        window = create_main_window(paths, logs, themes, texts)
     except Exception as error:
         logging.getLogger("workbench.app").exception("应用初始化失败")
         if logs:
             logs.stop()
         dialog = QMessageBox()
         dialog.setIcon(QMessageBox.Icon.Critical)
-        dialog.setWindowTitle("无法启动")
+        dialog.setWindowTitle(texts.get("app.startup.failed_title") if texts else "Unable to start")
         dialog.setTextFormat(Qt.TextFormat.PlainText)
-        dialog.setText(f"初始化失败，未覆盖原配置。\n{error}")
+        dialog.setText(texts.get("app.startup.failed", detail=error_message(error)) if texts else f"Initialization failed. Existing configuration was preserved.\n{error}")
         dialog.exec()
         return 1
     window.show()

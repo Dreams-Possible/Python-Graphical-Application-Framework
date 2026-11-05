@@ -44,12 +44,12 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(self.repository.load("clock")["server"], "pool.ntp.org")
 
     def test_appearance_is_independent_and_persistent(self):
-        self.assertEqual(self.repository.load("appearance"), {"theme": "system"})
-        self.repository.save("appearance", {"theme": "dark"})
-        self.assertEqual(self.repository.load("appearance"), {"theme": "dark"})
+        self.assertEqual(self.repository.load("appearance"), {"theme": "system", "language": "system"})
+        self.repository.save("appearance", {"theme": "dark", "language": "system"})
+        self.assertEqual(self.repository.load("appearance"), {"theme": "dark", "language": "system"})
         with self.assertRaises(ValueError):
-            self.repository.save("appearance", {"theme": "invalid"})
-        self.assertEqual(self.repository.load("appearance"), {"theme": "dark"})
+            self.repository.save("appearance", {"theme": "invalid", "language": "system"})
+        self.assertEqual(self.repository.load("appearance"), {"theme": "dark", "language": "system"})
 
     def test_failed_replace_keeps_original(self):
         values = self.repository.load("app")
@@ -71,7 +71,7 @@ class ConfigurationTests(unittest.TestCase):
         expected = self.repository.defaults("app")["values"]
         self.assertEqual(configuration.get("app"), expected)
         self.assertEqual(self.repository.load("app"), expected)
-        self.assertEqual(configuration.get("appearance"), {"theme": "dark"})
+        self.assertEqual(configuration.get("appearance"), {"theme": "dark", "language": "system"})
         self.assertEqual(changes, ["app"])
         path = self.repository.directory / "app.json"
         path.unlink()
@@ -88,7 +88,7 @@ class ConfigurationTests(unittest.TestCase):
         with patch("src.shared.configuration.os.replace", side_effect=OSError("read only")):
             with self.assertRaises(OSError):
                 configuration.restore_defaults("appearance")
-        self.assertEqual(configuration.get("appearance"), {"theme": "dark"})
+        self.assertEqual(configuration.get("appearance"), {"theme": "dark", "language": "system"})
         self.assertEqual(path.read_bytes(), original)
         self.assertEqual(changes, [])
 

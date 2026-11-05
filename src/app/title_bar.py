@@ -6,7 +6,7 @@ from src.shared.ui_metrics import UI
 
 
 class TitleBar(QWidget):
-    def __init__(self, window):
+    def __init__(self, window, texts):
         super().__init__(window)
         self.host = window
         self._press_global = None
@@ -18,7 +18,8 @@ class TitleBar(QWidget):
         row = QHBoxLayout(self)
         row.setContentsMargins(12, 0, 0, 0)
         row.setSpacing(8)
-        name = QLabel("Daylight")
+        name = QLabel()
+        texts.bind_text(name, "app.brand")
         name.setObjectName("WindowBrand")
         version = QLabel(APP_VERSION)
         version.setObjectName("Muted")
@@ -31,14 +32,14 @@ class TitleBar(QWidget):
         self.menu.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         row.addWidget(self.menu, 0, Qt.AlignmentFlag.AlignVCenter)
         row.addStretch()
-        for text, title, callback in (("−", "最小化", window.showMinimized),
-                                      ("□", "最大化或还原", self.toggle_maximized),
-                                      ("×", "关闭窗口", window.close)):
+        for text, title, callback in (("−", "app.minimize", window.showMinimized),
+                                      ("□", "app.maximize_restore", self.toggle_maximized),
+                                      ("×", "app.close_window", window.close)):
             button = QPushButton(text)
             button.setObjectName("WindowClose" if text == "×" else "WindowControl")
             button.setFixedSize(UI.window_button_width, UI.title_height)
-            button.setToolTip(title)
-            button.setAccessibleName(title)
+            texts.bind_text(button, title, setter="setToolTip")
+            texts.bind_text(button, title, setter="setAccessibleName")
             button.clicked.connect(callback)
             row.addWidget(button)
 

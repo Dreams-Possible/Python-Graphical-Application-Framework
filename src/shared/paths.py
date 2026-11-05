@@ -1,5 +1,7 @@
 """统一只读资源与跨平台用户目录；不依赖当前工作目录。"""
 
+from src.shared.errors import ui_error
+
 from dataclasses import dataclass
 from pathlib import Path
 import sys
@@ -24,7 +26,7 @@ class UserPaths:
         def location(kind) -> Path:
             value = QStandardPaths.writableLocation(kind)
             if not value:
-                raise RuntimeError("系统没有返回可写用户目录")
+                raise ui_error(RuntimeError, "errors.user_path")
             return Path(value)
 
         types = QStandardPaths.StandardLocation

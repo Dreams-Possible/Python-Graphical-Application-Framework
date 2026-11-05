@@ -1,48 +1,39 @@
 """天气趋势绘制：共用调色板的线条图标、小时曲线和每日温度区间。"""
 import math
-import re
-from datetime import date
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QPainter, QPainterPath, QPalette, QPen
 from PySide6.QtWidgets import QWidget
+from src.features.weather.presentation import condition as condition_text, forecast_row
 
 
 
-def daily_title(value, current=False):
-    """使用预报地点的日历日期计算星期，不依赖电脑当前时区。"""
-    try:
-        day = date.fromisoformat(value)
-    except ValueError:
-        return value
-    weekday = "周" + "一二三四五六日"[day.weekday()]
-    return f"{'今天' if current else day.strftime('%m-%d')} {weekday}"
-
-
-def temperature(value):
-    match = re.match(r"^-?\d+(?:\.\d+)?", value)
-    return float(match[0]) if match else None
+def daily_title(value, texts, current=False):
+    weekday = texts.weekday(value.isoweekday(), short=True)
+    if current:
+        return texts.get("weather.today_weekday", weekday=weekday)
+    return texts.get("weather.date_weekday", date=texts.short_date(value), weekday=weekday)
 
 
 def weather_icon(painter, rect, condition, color):
-    """按天气描述绘制矢量图标，未知天气使用问号而非晴天。"""
+    """按天气代码绘制矢量图标，未知天气使用问号而非晴天。"""
     painter.save()
     painter.translate(rect.x(), rect.y())
     painter.scale(rect.width() / 40, rect.height() / 40)
     painter.setPen(QPen(color, 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     painter.setBrush(Qt.BrushStyle.NoBrush)
-    if "多云" in condition:
+    if condition == 2:
         # 只画露在云层外的太阳弧和光芒，轮廓之间不交叉。
         painter.drawArc(QRectF(6, 5, 17, 17), 0, 220 * 16)
         for angle in (0, 45, 90, 135, 180):
             radians = math.radians(angle)
             painter.drawLine(QPointF(14.5 + 11 * math.cos(radians), 13.5 - 11 * math.sin(radians)), QPointF(14.5 + 13 * math.cos(radians), 13.5 - 13 * math.sin(radians)))
-    elif "晴" in condition:
+    elif condition in (0, 1):
         painter.drawEllipse(QRectF(10, 9, 15, 15))
         for angle in range(0, 360, 45):
             radians = math.radians(angle)
             painter.drawLine(QPointF(17.5 + 11 * math.cos(radians), 16.5 + 11 * math.sin(radians)), QPointF(17.5 + 14 * math.cos(radians), 16.5 + 14 * math.sin(radians)))
-    cloud = any(word in condition for word in ("云", "阴", "雨", "雪", "雷", "雾", "冰雹"))
+    cloud = condition in (2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99)
     if cloud:
         path = QPainterPath(QPointF(12, 30))
         path.cubicTo(3, 30, 3, 19, 12, 19)
@@ -50,31 +41,37 @@ def weather_icon(painter, rect, condition, color):
         path.cubicTo(38, 19, 40, 30, 31, 30)
         path.closeSubpath()
         painter.drawPath(path)
-        if "雨" in condition:
+        if condition in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82):
             for x in (13, 22, 31):
                 painter.drawLine(QPointF(x, 33), QPointF(x - 2, 37))
-        elif "雪" in condition or "冰雹" in condition:
+        elif condition in (71, 73, 75, 77, 85, 86):
             for x in (13, 23, 33):
                 painter.drawEllipse(QRectF(x - 1, 34, 2, 2))
-        elif "雷" in condition:
+        elif condition in (95, 96, 99):
             painter.drawPolyline([QPointF(23, 30), QPointF(18, 35), QPointF(24, 35), QPointF(20, 40)])
-        elif "雾" in condition:
+        elif condition in (45, 48):
             painter.drawLine(QPointF(8, 33), QPointF(33, 33))
             painter.drawLine(QPointF(12, 37), QPointF(29, 37))
-    elif "晴" not in condition:
+    elif condition not in (0, 1):
         painter.drawText(QRectF(0, 0, 40, 40), Qt.AlignmentFlag.AlignCenter, "?")
     painter.restore()
 
 
 class WeatherSymbol(QWidget):
-    def __init__(self):
+    def __init__(self, texts):
         super().__init__()
-        self.condition = ""
+        self.texts = texts
+        texts.changed.connect(self.retranslate)
+        self.condition = None
         self.setFixedSize(64, 64)
 
     def set_condition(self, condition):
         self.condition = condition
-        self.setAccessibleName(condition or "暂无天气")
+        self.retranslate()
+        self.update()
+
+    def retranslate(self):
+        self.setAccessibleName(condition_text(self.texts, self.condition))
         self.update()
 
     def paintEvent(self, event):
@@ -88,23 +85,33 @@ class ForecastGraphic(QWidget):
     COLUMN_WIDTH = 104
     EXPANDED_WIDTH = 280
 
-    def __init__(self, hourly=False):
+    def __init__(self, texts, hourly=False):
         super().__init__()
+        self.texts = texts
         self.hourly = hourly
+        texts.changed.connect(self.retranslate)
         self.rows = ()
+        self._hovered_index = -1
         self.current_index = -1
         self.selected_index = -1
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAccessibleName("逐小时天气趋势" if hourly else "每日高低温趋势")
+        self.setMouseTracking(True)
+        self.retranslate()
         self.set_rows(())
 
     def set_rows(self, rows, current_key=""):
         self.selected_index = -1
         self.rows = rows
-        self.current_index = next((index for index, row in enumerate(rows) if row[0] == current_key), -1)
-        self.setAccessibleDescription("\n".join("，".join(row) for row in rows) or "暂无数据")
+        self.current_index = next((index for index, row in enumerate(rows) if (row.when.strftime("%m-%d %H:%M") if self.hourly else row.when.date().isoformat()) == current_key), -1)
+        self.retranslate()
         self._resize_columns()
         self.setFixedHeight(278 if self.hourly else 320)
+        self.update()
+
+    def retranslate(self):
+        self.setAccessibleName(self.texts.get("weather.hours_accessible" if self.hourly else "weather.days_accessible"))
+        self.setToolTip("\n".join(forecast_row(self.rows[self._hovered_index], self.hourly, self.texts)) if 0 <= self._hovered_index < len(self.rows) else "")
+        self.setAccessibleDescription("\n".join(" | ".join(forecast_row(point, self.hourly, self.texts)) for point in self.rows) or self.texts.get("weather.no_data"))
         self.update()
 
     def paintEvent(self, event):
@@ -116,17 +123,18 @@ class ForecastGraphic(QWidget):
         minimum_color = self.palette().color(QPalette.ColorRole.PlaceholderText)
         painter.setPen(muted)
         if not self.rows:
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "暂无数据")
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.texts.get("weather.no_data"))
             return
-        values = [temperature(row[2]) for row in self.rows]
+        values = [point.temperature if self.hourly else point.minimum for point in self.rows]
         if not self.hourly:
-            values += [temperature(row[3]) for row in self.rows]
+            values += [point.maximum for point in self.rows]
         valid = [value for value in values if value is not None]
         low, high = (min(valid), max(valid)) if valid else (0, 1)
         span = max(1, high - low)
         align = Qt.AlignmentFlag.AlignCenter
         previous_high = previous_low = None
-        for index, row in enumerate(self.rows):
+        for index, point_data in enumerate(self.rows):
+            row = forecast_row(point_data, self.hourly, self.texts)
             bounds = self._column_rect(index)
             x = bounds.left() + self.COLUMN_WIDTH / 2
             column = bounds.adjusted(4, 2, -4, -2)
@@ -144,7 +152,7 @@ class ForecastGraphic(QWidget):
                 painter.drawLine(QPointF(detail_left - 6, 18), QPointF(detail_left - 6, self.height() - 18))
                 painter.setPen(accent)
                 painter.drawText(QRectF(detail_left, 12, 156, 24), align, row[0])
-                fields = (("体感", row[3]), ("湿度", row[4]), ("降水概率", row[5]), ("降水量", row[6]), ("风速", row[7])) if self.hourly else (("最低温度", row[2]), ("最高温度", row[3]), ("降水概率", row[4]), ("降水量", row[5]), ("最大风速", row[6]))
+                fields = ((self.texts.get("weather.apparent"), row[3]), (self.texts.get("weather.humidity"), row[4]), (self.texts.get("weather.probability"), row[5]), (self.texts.get("weather.precipitation"), row[6]), (self.texts.get("weather.wind"), row[7])) if self.hourly else ((self.texts.get("weather.minimum"), row[2]), (self.texts.get("weather.maximum"), row[3]), (self.texts.get("weather.probability"), row[4]), (self.texts.get("weather.precipitation"), row[5]), (self.texts.get("weather.max_wind"), row[6]))
                 for detail_index, (label, value) in enumerate(fields):
                     y = 48 + detail_index * 43
                     painter.setPen(muted)
@@ -153,14 +161,14 @@ class ForecastGraphic(QWidget):
                     painter.drawText(QRectF(detail_left + 4, y + 18, 148, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, value)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(accent if index == self.current_index else muted)
-            title = ("当前小时" if index == self.current_index else row[0]) if self.hourly else daily_title(row[0], index == self.current_index)
+            title = (self.texts.get("weather.current_hour") if index == self.current_index else row[0]) if self.hourly else daily_title(point_data.when.date(), self.texts, index == self.current_index)
             painter.drawText(QRectF(x - 48, 8, 96, 22), align, title)
-            weather_icon(painter, QRectF(x - 18, 38, 36, 36), row[1], accent)
+            weather_icon(painter, QRectF(x - 18, 38, 36, 36), point_data.weather_code, accent)
             painter.setPen(text)
-            painter.drawText(QRectF(x - 48, 76, 96, 24), align, row[1])
+            painter.drawText(QRectF(x - 48, 76, 96, 24), align, painter.fontMetrics().elidedText(row[1], Qt.TextElideMode.ElideRight, 96))
             # 所有列共用同一温度刻度，缺失值断开曲线。
-            high_value = temperature(row[2] if self.hourly else row[3])
-            low_value = temperature(row[2]) if not self.hourly else None
+            high_value = point_data.temperature if self.hourly else point_data.maximum
+            low_value = point_data.minimum if not self.hourly else None
             points = []
             for value, previous, color in ((high_value, previous_high, accent), (low_value, previous_low, minimum_color)):
                 point = QPointF(x, 160 - (value - low) / span * 48) if value is not None else None
@@ -173,13 +181,13 @@ class ForecastGraphic(QWidget):
                 points.append(point)
             previous_high, previous_low = points
             painter.setPen(text)
-            painter.drawText(QRectF(x - 48, 174, 96, 25), align, row[2] if self.hourly else "最高 " + row[3])
+            painter.drawText(QRectF(x - 48, 174, 96, 25), align, row[2] if self.hourly else self.texts.get("weather.high_value", value=row[3]))
             if not self.hourly:
                 painter.setPen(muted)
-                painter.drawText(QRectF(x - 48, 204, 96, 25), align, "最低 " + row[2])
+                painter.drawText(QRectF(x - 48, 204, 96, 25), align, self.texts.get("weather.low_value", value=row[2]))
             offset = 0 if self.hourly else 36
             painter.setPen(muted)
-            painter.drawText(QRectF(x - 48, 206 + offset, 96, 22), align, "降水 " + row[5 if self.hourly else 4])
+            painter.drawText(QRectF(x - 48, 206 + offset, 96, 22), align, self.texts.get("weather.rain_value", value=row[5 if self.hourly else 4]))
             painter.drawText(QRectF(x - 48, 236 + offset, 96, 22), align, row[7 if self.hourly else 6])
 
     def _column_rect(self, index):
@@ -208,6 +216,12 @@ class ForecastGraphic(QWidget):
     def _toggle_details(self, index):
         self.selected_index = index if 0 <= index < len(self.rows) and index != self.selected_index else -1
         self._resize_columns()
+
+    def mouseMoveEvent(self, event):
+        index = self._index_at(event.position())
+        self._hovered_index = index
+        self.setToolTip("\n".join(forecast_row(self.rows[index], self.hourly, self.texts)) if index >= 0 else "")
+        super().mouseMoveEvent(event)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

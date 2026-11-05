@@ -1,5 +1,7 @@
 """应用级主题：语义颜色、Qt 调色板及统一控件样式。"""
 
+from src.shared.errors import ui_error
+
 import logging
 from string import Template
 
@@ -49,6 +51,7 @@ QLabel#Brand { font-size: 16px; font-weight: 600; color: $text; }
 QLabel#BrandCaption { font-size: 10px; color: $muted; font-family: 'Segoe UI', sans-serif; }
 QLabel#BrandMark { background: $selected; border-radius: 12px; }
 QFrame#Divider { background: $border; border: 0; }
+QPushButton#CalendarAction { padding: 6px 8px; }
 QLabel#CalendarDay { font-size: 24px; border: 2px solid $accent; border-radius: 10px; padding: 20px; }
 QLabel#CalendarDay[current="true"], QLabel#SectionTitle[current="true"] { color: $accent; }
 QTableWidget#CalendarGrid { background: $surface; border: 0; outline: 0; }
@@ -190,7 +193,7 @@ STYLE = Template(STYLE.safe_substitute(navigation_gap=UI.navigation_gap))
 
 def effective_theme(mode: str, system_dark: bool) -> str:
     if mode not in ("system", "light", "dark"):
-        raise ValueError("未知主题模式")
+        raise ui_error(ValueError, "errors.theme")
     return ("dark" if system_dark else "light") if mode == "system" else mode
 
 

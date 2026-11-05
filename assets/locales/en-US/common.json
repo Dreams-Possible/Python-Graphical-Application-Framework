@@ -1,0 +1,15 @@
+{
+  "common.unavailable": "—",
+  "common.save": "Save settings",
+  "common.cancel": "Cancel",
+  "common.close": "Close",
+  "common.today": "Today",
+  "common.language": "Software language",
+  "common.language.system": "Follow system",
+  "common.language.zh-CN": "简体中文",
+  "common.language.en-US": "English",
+  "common.application": "Daily Dashboard",
+  "common.format.short_date": "MM/dd",
+  "common.format.time": "HH:mm:ss",
+  "common.format.time_minutes": "HH:mm"
+}

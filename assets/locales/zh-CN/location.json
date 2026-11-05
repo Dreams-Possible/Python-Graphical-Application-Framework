@@ -1,0 +1,19 @@
+{
+  "location.unknown": "尚未确定当前位置",
+  "location.disabled": "当前位置已停用",
+  "location.manual": "手动位置",
+  "location.network": "网络位置（出口 IP）",
+  "location.looking_up": "正在通过请求出口 IP 定位…",
+  "location.applying": "位置配置已更新，正在应用…",
+  "location.failed": "网络定位失败，请重试或选择手动位置",
+  "location.cancelled": "已取消",
+  "location.query_required": "请输入地点名称",
+  "location.status": "{source}：{name} · {country} · {zone}",
+  "location.picker.placeholder": "搜索当前位置，例如 上海、Tokyo、London",
+  "location.picker.search": "搜索城市",
+  "location.picker.credit": "搜索结果由 Open-Meteo / GeoNames 提供，选择后点击保存。",
+  "location.picker.busy": "正在搜索…",
+  "location.picker.choose": "请选择地点，保存后应用。",
+  "location.picker.empty": "未找到地点，请换个名称。",
+  "location.picker.filled": "已回填位置，点击保存后应用。"
+}

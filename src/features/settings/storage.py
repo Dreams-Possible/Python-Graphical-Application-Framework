@@ -1,32 +1,44 @@
 """只管理本应用的用户文件；磁盘扫描与清理均在后台进行。"""
 
+from src.shared.errors import error_message
+
+from src.shared.errors import ui_error
+
 from dataclasses import dataclass
+from src.shared.messages import message
 from datetime import datetime
 import logging
 from pathlib import Path
 from threading import Event
 
-from PySide6.QtCore import QObject, Signal, Slot, QUrl
+from PySide6.QtCore import QSignalBlocker, QObject, Signal, Slot, QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from src.shared.paths import UserPaths
 from src.shared.tasks import TaskRunner, check_cancelled
-from src.shared.widgets import choice_box, data_table, plain_label, populate
+from src.shared.widgets import choice_box, data_table, plain_label, populate, text_button, text_label
 
 LOGGER = logging.getLogger("workbench.storage")
 
 
 @dataclass(frozen=True)
+class StorageFile:
+    name: str
+    size: int
+    modified: datetime
+
+
+@dataclass(frozen=True)
 class StorageSnapshot:
-    rows: tuple[tuple[str, ...], ...]
+    rows: tuple[StorageFile, ...]
     count: int
     size: int
 
 
 class StorageRepository:
     def __init__(self, paths: UserPaths, current_log: Path) -> None:
-        self.directories = {"配置": paths.config, "数据": paths.data, "缓存": paths.cache, "日志": paths.logs}
+        self.directories = {"config": paths.config, "data": paths.data, "cache": paths.cache, "logs": paths.logs}
         self.current_log = current_log
 
     def _files(self, category: str, cancelled: Event):
@@ -49,17 +61,17 @@ class StorageRepository:
             count += 1
             size += metadata.st_size
             if len(rows) < 500:
-                rows.append((str(path.relative_to(root)), f"{metadata.st_size / 1024:.1f} KiB", datetime.fromtimestamp(metadata.st_mtime).strftime("%Y-%m-%d %H:%M")))
+                rows.append(StorageFile(str(path.relative_to(root)), metadata.st_size, datetime.fromtimestamp(metadata.st_mtime)))
         LOGGER.info("本地文件扫描完成：%s，%d 个文件，%d 字节", category, count, size)
-        return StorageSnapshot(tuple(sorted(rows)), count, size)
+        return StorageSnapshot(tuple(sorted(rows, key=lambda item: item.name)), count, size)
 
     def clear(self, category: str, cancelled: Event) -> StorageSnapshot:
         LOGGER.info("请求清理本地文件：%s", category)
-        if category not in ("缓存", "日志"):
-            raise ValueError("该类别不允许直接清理")
+        if category not in ("cache", "logs"):
+            raise ui_error(ValueError, "errors.storage_clear")
         removed = 0
         for path in self._files(category, cancelled):
-            if path == self.current_log or (category == "日志" and not path.name.startswith("session-")):
+            if path == self.current_log or (category == "logs" and not path.name.startswith("session-")):
                 continue
             try:
                 path.unlink()
@@ -71,12 +83,12 @@ class StorageRepository:
 
 
 class StorageViewModel(QObject):
-    changed = Signal(object, str, bool)
+    changed = Signal(object, object, bool)
 
     def __init__(self, repository: StorageRepository, tasks: TaskRunner) -> None:
         super().__init__()
         self.repository, self.tasks = repository, tasks
-        self.category = "配置"
+        self.category = "config"
         self._generation = 0
         self._busy = False
         tasks.completed.connect(self._completed)
@@ -99,66 +111,106 @@ class StorageViewModel(QObject):
         try:
             self._generation = self.tasks.submit("storage.files", lambda stop: action(category, stop))
         except RuntimeError as error:
-            self.changed.emit(None, str(error), False)
+            self.changed.emit(None, error_message(error), False)
             return
         self._busy = True
-        self.changed.emit(None, "正在处理本地文件…", True)
+        self.changed.emit(None, message("storage.busy"), True)
 
-    @Slot(str, int, object, str, bool)
+    @Slot(str, int, object, object, bool)
     def _completed(self, key: str, generation: int, result: object, error: str, cancelled: bool) -> None:
         if key != "storage.files" or generation != self._generation:
             return
         self._busy = False
         if error:
-            self.changed.emit(None, "已取消" if cancelled else error, False)
+            self.changed.emit(None, message("storage.cancelled") if cancelled else error, False)
         else:
-            self.changed.emit(result, f"共 {result.count} 个文件，{result.size / 1024:.1f} KiB；最多展示 500 个", False)
+            self.changed.emit(result, message("storage.summary", count=result.count, size=result.size / 1024), False)
 
 
 class StorageView(QWidget):
-    def __init__(self, model: StorageViewModel) -> None:
+    def __init__(self, model: StorageViewModel, texts) -> None:
         super().__init__()
         self.model = model
+        self.texts = texts
+        self._snapshot = None
+        self._clear_dialog = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.category = choice_box()
-        self.category.addItems(tuple(model.repository.directories))
-        self.category.currentTextChanged.connect(model.select)
-        open_button = QPushButton("打开目录")
+        for key in model.repository.directories:
+            self.category.addItem(texts.get("storage.category." + key), key)
+        self.category.activated.connect(lambda: model.select(self.category.currentData()))
+        open_button = text_button(texts, "storage.open")
         open_button.clicked.connect(self._open)
-        self.refresh = QPushButton("刷新文件")
+        self.refresh = text_button(texts, "storage.refresh")
         self.refresh.clicked.connect(lambda: model.refresh())
-        self.clear = QPushButton("清理文件")
+        self.clear = text_button(texts, "storage.clear")
         self.clear.clicked.connect(self._clear)
         row = QHBoxLayout()
         for item in (self.category, open_button, self.refresh, self.clear):
             row.addWidget(item)
         layout.addLayout(row)
         self.path = plain_label(str(model.directory), "Muted")
-        self.status = plain_label("选择类别并刷新，查看此用户的文件。", "Muted")
+        self.status = text_label(texts, "storage.hint", "Muted")
         layout.addWidget(self.path)
         layout.addWidget(self.status)
-        self.table = data_table(("文件", "大小", "更新时间"))
+        self.table = data_table(tuple(texts.get(key) for key in ("storage.file", "storage.size", "storage.modified")))
         layout.addWidget(self.table, 1)
         model.changed.connect(self.render)
         self.clear.setEnabled(False)
+        texts.changed.connect(self.retranslate)
 
     def render(self, snapshot, message: str, busy: bool) -> None:
         self.path.setText(str(self.model.directory))
-        self.status.setText(message)
+        self.texts.set_text(self.status, message)
         self.category.setEnabled(not busy)
         self.refresh.setEnabled(not busy)
-        self.clear.setEnabled(not busy and self.model.category in ("缓存", "日志"))
+        self.clear.setEnabled(not busy and self.model.category in ("cache", "logs"))
         if snapshot is not None:
-            populate(self.table, snapshot.rows)
+            self._snapshot = snapshot
+            self._render_rows()
+
+    def _render_rows(self):
+        if self._snapshot is not None:
+            populate(self.table, tuple((item.name, self.texts.get("storage.kib", value=self.texts.number(item.size / 1024, 1)),
+                self.texts.date(item.modified.date()) + " " + self.texts.time(item.modified, seconds=False)) for item in self._snapshot.rows))
+
+    def retranslate(self):
+        blocked = QSignalBlocker(self.category)
+        for index in range(self.category.count()):
+            self.category.setItemText(index, self.texts.get("storage.category." + self.category.itemData(index)))
+        self.table.setHorizontalHeaderLabels([self.texts.get(key) for key in ("storage.file", "storage.size", "storage.modified")])
+        if self._snapshot is not None:
+            for row, item in enumerate(self._snapshot.rows):
+                self.table.item(row, 1).setText(self.texts.get("storage.kib", value=self.texts.number(item.size / 1024, 1)))
+                self.table.item(row, 2).setText(self.texts.date(item.modified.date()) + " " + self.texts.time(item.modified, seconds=False))
 
     def _open(self) -> None:
         LOGGER.info("请求打开本地文件目录：%s", self.model.category)
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.model.directory))):
             LOGGER.warning("系统无法打开本地文件目录")
-            self.status.setText("系统无法打开该目录，可复制上方路径手动访问。")
+            self.texts.bind_text(self.status, "storage.open_failed")
 
     def _clear(self) -> None:
-        text = "清理本应用的缓存文件？" if self.model.category == "缓存" else "清理本应用旧会话的日志？当前会话日志将保留。"
-        if QMessageBox.question(self, "清理本地文件", text, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Cancel) == QMessageBox.StandardButton.Yes:
+        if self._clear_dialog is not None:
+            self._clear_dialog.raise_()
+            return
+        category = self.model.category
+        dialog = QMessageBox(self)
+        self.texts.bind_text(dialog, "storage.clear_title", setter="setWindowTitle")
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        self.texts.bind_text(dialog, "storage.clear_cache" if category == "cache" else "storage.clear_logs")
+        dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        self.texts.bind_text(dialog.button(QMessageBox.StandardButton.Yes), "storage.confirm")
+        self.texts.bind_text(dialog.button(QMessageBox.StandardButton.Cancel), "common.cancel")
+        dialog.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        self._clear_dialog = dialog
+        dialog.finished.connect(lambda result: self._finish_clear(result, category))
+        dialog.open()
+
+    def _finish_clear(self, result, category):
+        dialog, self._clear_dialog = self._clear_dialog, None
+        if dialog:
+            dialog.deleteLater()
+        if result == QMessageBox.StandardButton.Yes and self.model.category == category:
             self.model.refresh(clear=True)

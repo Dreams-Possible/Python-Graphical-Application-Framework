@@ -7,10 +7,10 @@ from src.shared.paths import resource_path
 
 
 class BrandMark(QWidget):
-    def __init__(self, parent=None, size=40):
+    def __init__(self, texts, parent=None, size=40):
         super().__init__(parent)
         self.setFixedSize(size, size)
-        self.setAccessibleName("Daylight 日出标志")
+        texts.bind_text(self, "app.brand_accessible", setter="setAccessibleName")
         self.source = resource_path("icons/sunrise.svg").read_text(encoding="utf-8")
 
     def paintEvent(self, event):

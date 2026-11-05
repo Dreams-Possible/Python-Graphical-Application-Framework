@@ -1,4 +1,7 @@
 {
   "schema_version": 1,
-  "values": {"theme": "system"}
+  "values": {
+    "theme": "system",
+    "language": "system"
+  }
 }

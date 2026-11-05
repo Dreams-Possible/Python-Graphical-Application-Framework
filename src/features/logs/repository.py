@@ -1,5 +1,7 @@
 """只访问本应用会话日志；历史读取限量，避免大文件阻塞界面。"""
 
+from src.shared.errors import ui_error
+
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,10 +36,10 @@ class LogRepository:
 
     def read(self, name: str, limit: int, stop: Event) -> HistorySnapshot:
         if Path(name).name != name or not name.startswith("session-") or not name.endswith(".log"):
-            raise ValueError("无效日志文件名")
+            raise ui_error(ValueError, "errors.log_filename")
         path = self.directory / name
         if path.is_symlink() or path.resolve().parent != self.directory.resolve():
-            raise ValueError("不允许读取日志目录之外的文件")
+            raise ui_error(ValueError, "errors.log_path")
         check_cancelled(stop)
         maximum = 2 * 1024 * 1024
         with path.open("rb") as stream:

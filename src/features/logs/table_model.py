@@ -5,14 +5,19 @@ from PySide6.QtGui import QColor
 
 
 class LogTableModel(QAbstractTableModel):
-    HEADERS = ("等级", "时间", "来源", "消息")
+    HEADERS = ("logs.header.level", "logs.header.time", "logs.header.source", "logs.header.message")
     LEVEL_COLORS = {"DEBUG": "muted", "INFO": "success", "WARNING": "warning", "ERROR": "error", "CRITICAL": "error"}
 
-    def __init__(self, themes, limit, parent=None):
+    def __init__(self, themes, limit, texts, parent=None):
         super().__init__(parent)
+        self.texts = texts
+        texts.changed.connect(self.retranslate)
         self.themes, self.limit = themes, limit
         self.entries = []
         themes.changed.connect(self.refresh_colors)
+
+    def retranslate(self):
+        self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, len(self.HEADERS) - 1)
 
     def rowCount(self, parent=QModelIndex()):
         return 0 if parent.isValid() else len(self.entries)
@@ -22,7 +27,7 @@ class LogTableModel(QAbstractTableModel):
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
-            return self.HEADERS[section]
+            return self.texts.get(self.HEADERS[section])
         return None
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):

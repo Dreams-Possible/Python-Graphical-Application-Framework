@@ -10,6 +10,8 @@ from PySide6.QtWidgets import QSizeGrip
 from PySide6.QtWidgets import QSizePolicy, QLayout, QSplitter, QListWidget, QListWidgetItem, QAbstractItemView, QApplication, QDialog, QMenuBar, QMessageBox, QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
 from src.shared.ui_metrics import UI
+from src.shared.localization import message
+from src.shared.widgets import text_label, text_button
 from src.app.notifications import NotificationCenter
 from src.shared.configuration import Configuration
 from src.shared.tasks import TaskRunner
@@ -20,24 +22,25 @@ LOGGER = logging.getLogger("workbench.navigation")
 @dataclass(frozen=True)
 class PageDefinition:
     key: str
-    title: str
+    title_key: str
     caption: str
     view: QWidget
 
 
 class ApplicationWindow(QMainWindow):
-    def __init__(self, pages: tuple[PageDefinition, ...], configuration: Configuration, tasks: TaskRunner, stop_producers: Callable[[], None]) -> None:
+    def __init__(self, pages: tuple[PageDefinition, ...], configuration: Configuration, tasks: TaskRunner, stop_producers: Callable[[], None], texts) -> None:
         super().__init__()
+        self.texts = texts
         self._tasks, self._stop_producers = tasks, stop_producers
         self._closing = False
         self._exit_ready = False
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         QApplication.instance().installEventFilter(self)
-        self.setWindowTitle("Daylight · 桌面信息台")
+        texts.bind_text(self, "app.window_title", setter="setWindowTitle")
         self.setMinimumSize(960, 680)
         values = configuration.get("app")
         self.resize(values["window_width"], values["window_height"])
-        self.notifications = NotificationCenter(self)
+        self.notifications = NotificationCenter(self, texts)
         self._pages = QStackedWidget()
         sidebar = QWidget()
         sidebar.setObjectName("Sidebar")
@@ -72,16 +75,16 @@ class ApplicationWindow(QMainWindow):
         self._navigation_items = []
         for index, page in enumerate(pages):
             listing = self._settings_list if page.key in ("logs", "settings") else self._nav_list
-            item = QListWidgetItem(page.title, listing)
+            item = QListWidgetItem(texts.get(page.title_key), listing)
             item.setData(Qt.ItemDataRole.UserRole, index)
             item.setData(Qt.ItemDataRole.UserRole + 1, page.key)
             item.setSizeHint(QSize(0, UI.navigation_row_height))
-            item.setToolTip(page.title)
+            item.setToolTip(texts.get(page.title_key))
             self._navigation_items.append(item)
             self._pages.addWidget(page.view)
             if page.key == values["initial_page"]:
                 initial = index
-        self._activity = QLabel("就绪")
+        self._activity = text_label(texts, "app.ready")
         self._activity.setWordWrap(True)
         self._activity.setObjectName("Muted")
         self.statusBar().addWidget(self._activity, 1)
@@ -110,6 +113,12 @@ class ApplicationWindow(QMainWindow):
         self._sync_navigation(initial)
         tasks.activity_changed.connect(self._activity_changed)
         tasks.drained.connect(self._drained)
+        texts.changed.connect(self.retranslate)
+
+    def retranslate(self):
+        self._set_sidebar_labels()
+        for item, page in zip(self._navigation_items, self._page_definitions):
+            item.setToolTip(self.texts.get(page.title_key))
 
     def _select_navigation(self, listing, row):
         if row >= 0:
@@ -125,7 +134,7 @@ class ApplicationWindow(QMainWindow):
 
     def _set_sidebar_labels(self):
         for item, page in zip(self._navigation_items, self._page_definitions):
-            item.setText("" if self._collapsed else page.title)
+            item.setText("" if self._collapsed else self.texts.get(page.title_key))
         self._sidebar_action.setChecked(not self._collapsed)
 
     def _collapse_sidebar(self):
@@ -171,36 +180,45 @@ class ApplicationWindow(QMainWindow):
 
     def _build_menus(self) -> None:
         from src.app.title_bar import TitleBar
-        header = TitleBar(self)
+        header = TitleBar(self, self.texts)
         self._menu_bar = header.menu
         self.setMenuWidget(header)
         bar = self._menu_bar
-        file_menu = bar.addMenu("文件(&F)")
-        close = file_menu.addAction("退出", self.close)
-        close.setShortcut(QKeySequence.StandardKey.Quit)
-        edit = bar.addMenu("编辑(&E)")
+        file_menu = bar.addMenu("")
+        self.texts.bind_text(file_menu, "app.menu.file", setter="setTitle")
+        close = file_menu.addAction("", self.close)
+        self.texts.bind_text(close, "app.quit")
+        # 某些平台将 StandardKey.Quit 映射到名为 Exit 的特殊键，翻译后会重复显示“退出”。
+        close.setShortcut(QKeySequence("Ctrl+Q"))
+        edit = bar.addMenu("")
+        self.texts.bind_text(edit, "app.menu.edit", setter="setTitle")
         self._edit_actions = []
-        for title, method, shortcut in (("撤销", "undo", QKeySequence.StandardKey.Undo),
-                                        ("重做", "redo", QKeySequence.StandardKey.Redo),
-                                        ("剪切", "cut", QKeySequence.StandardKey.Cut),
-                                        ("复制", "copy", QKeySequence.StandardKey.Copy),
-                                        ("粘贴", "paste", QKeySequence.StandardKey.Paste),
-                                        ("全选", "selectAll", QKeySequence.StandardKey.SelectAll)):
+        for title, method, shortcut in (("app.undo", "undo", QKeySequence.StandardKey.Undo),
+                                        ("app.redo", "redo", QKeySequence.StandardKey.Redo),
+                                        ("app.cut", "cut", QKeySequence.StandardKey.Cut),
+                                        ("app.copy", "copy", QKeySequence.StandardKey.Copy),
+                                        ("app.paste", "paste", QKeySequence.StandardKey.Paste),
+                                        ("app.select_all", "selectAll", QKeySequence.StandardKey.SelectAll)):
             action = edit.addAction(title, lambda checked=False, name=method: self._edit(name))
             # 快捷键由输入控件原有处理，避免与日志复制等局部快捷键冲突。
-            action.setText(title + "\t" + QKeySequence(shortcut).toString(QKeySequence.SequenceFormat.NativeText))
+            self.texts.bind_text(action, "app.shortcut", label=message(title), shortcut=QKeySequence(shortcut).toString(QKeySequence.SequenceFormat.NativeText))
             self._edit_actions.append((action, method))
         edit.aboutToShow.connect(self._update_edit_actions)
-        view = bar.addMenu("视图(&V)")
-        self._sidebar_action = view.addAction("展开侧边栏", self._toggle_sidebar)
+        view = bar.addMenu("")
+        self.texts.bind_text(view, "app.menu.view", setter="setTitle")
+        self._sidebar_action = view.addAction("", self._toggle_sidebar)
+        self.texts.bind_text(self._sidebar_action, "app.sidebar.expand")
         self._sidebar_action.setCheckable(True)
         self._sidebar_action.setChecked(True)
         self._sidebar_action.setShortcut("Ctrl+B")
         view.addSeparator()
         for index, page in enumerate(self._page_definitions):
-            view.addAction(page.title, lambda checked=False, target=index: self._pages.setCurrentIndex(target))
-        help_menu = bar.addMenu("帮助(&H)")
-        help_menu.addAction("关于", self._about)
+            action = view.addAction("", lambda checked=False, target=index: self._pages.setCurrentIndex(target))
+            self.texts.bind_text(action, page.title_key)
+        help_menu = bar.addMenu("")
+        self.texts.bind_text(help_menu, "app.menu.help", setter="setTitle")
+        about = help_menu.addAction("", self._about)
+        self.texts.bind_text(about, "app.about")
         self._menus = (file_menu, edit, view, help_menu)
 
     def _update_edit_actions(self) -> None:
@@ -220,7 +238,7 @@ class ApplicationWindow(QMainWindow):
     def _about(self) -> None:
         from version import APP_VERSION
         dialog = QDialog(self)
-        dialog.setWindowTitle("关于 Daylight")
+        self.texts.bind_text(dialog, "app.about_title", setter="setWindowTitle")
         dialog.setMinimumSize(UI.about_width, UI.about_height)
         dialog.resize(UI.about_width, UI.about_height)
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -230,26 +248,26 @@ class ApplicationWindow(QMainWindow):
         from src.shared.brand_mark import BrandMark
         brand_row = QHBoxLayout()
         brand_row.setSpacing(18)
-        brand_row.addWidget(BrandMark(dialog, UI.about_brand_size))
+        brand_row.addWidget(BrandMark(self.texts, dialog, UI.about_brand_size))
         brand_text = QVBoxLayout()
         brand_text.setSpacing(2)
-        brand = QLabel("日常信息台")
+        brand = text_label(self.texts, "common.application")
         brand.setObjectName("AboutBrand")
-        caption = QLabel("DAYLIGHT")
+        caption = text_label(self.texts, "app.brand_caption")
         caption.setObjectName("AboutCaption")
         brand_text.addWidget(brand)
         brand_text.addWidget(caption)
         brand_row.addLayout(brand_text)
         layout.addLayout(brand_row)
         layout.addSpacing(4)
-        version = QLabel(f"版本 {APP_VERSION}")
+        version = text_label(self.texts, "app.version", version=APP_VERSION)
         version.setObjectName("Muted")
         layout.addWidget(version)
-        description = QLabel("时钟、秒表、计时器、天气与日历。")
+        description = text_label(self.texts, "app.about_features")
         description.setWordWrap(True)
         layout.addWidget(description)
         layout.addStretch()
-        close = QPushButton("关闭")
+        close = text_button(self.texts, "common.close")
         close.clicked.connect(dialog.close)
         close.setMinimumWidth(100)
         layout.addWidget(close, 0, Qt.AlignmentFlag.AlignRight)
@@ -280,9 +298,9 @@ class ApplicationWindow(QMainWindow):
 
     def _activity_changed(self, count: int) -> None:
         if self._closing:
-            self._activity.setText(f"正在退出\n等待 {count} 个后台任务结束")
+            self.texts.bind_text(self._activity, "app.closing", count=count)
         else:
-            self._activity.setText("就绪" if count == 0 else f"后台任务 {count} 个")
+            self.texts.set_text(self._activity, message("app.ready") if count == 0 else message("app.background_tasks", count=count))
 
     def _drained(self) -> None:
         if self._closing:

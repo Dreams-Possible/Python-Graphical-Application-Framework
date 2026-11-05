@@ -9,28 +9,35 @@ LOGGER = logging.getLogger("workbench.notifications")
 
 
 class NotificationCenter(QObject):
-    def __init__(self, parent: QWidget) -> None:
+    def __init__(self, parent: QWidget, texts) -> None:
         super().__init__(parent)
+        self.texts = texts
+        texts.changed.connect(self.retranslate)
         self._window = parent
         self._dialog = None
         self._messages = deque(maxlen=20)
 
-    @Slot(str)
-    def report(self, message: str) -> None:
+    @Slot(object)
+    def report(self, message: object) -> None:
         if message not in self._messages:
             self._messages.append(message)
         LOGGER.info("异步通知已汇总，当前 %d 条", len(self._messages))
         if self._dialog is None:
             dialog = QMessageBox(self._window)
-            dialog.setWindowTitle("应用提示")
+            self.texts.bind_text(dialog, "app.notification", setter="setWindowTitle")
             dialog.setIcon(QMessageBox.Icon.Warning)
             dialog.setTextFormat(Qt.TextFormat.PlainText)
             dialog.setStandardButtons(QMessageBox.StandardButton.Ok)
+            self.texts.bind_text(dialog.button(QMessageBox.StandardButton.Ok), "app.ok")
             dialog.setWindowModality(Qt.WindowModality.NonModal)
             dialog.finished.connect(self._closed)
             self._dialog = dialog
-        self._dialog.setText("\n\n".join(self._messages))
+        self.retranslate()
         self._dialog.show()
+
+    def retranslate(self):
+        if self._dialog:
+            self._dialog.setText("\n\n".join(self.texts.render(value) for value in self._messages))
 
     def _closed(self, _result: int) -> None:
         LOGGER.info("异步通知窗口已关闭")

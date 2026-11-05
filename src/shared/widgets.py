@@ -1,6 +1,6 @@
 """页面共用标题与只读数据表。"""
 
-from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHeaderView, QLabel, QListView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QPushButton, QAbstractItemView, QComboBox, QHeaderView, QLabel, QListView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from PySide6.QtCore import Qt
 from src.shared.ui_metrics import UI
 
@@ -22,13 +22,17 @@ def choice_box() -> QComboBox:
     return combo
 
 
-def page_layout(page: QWidget, title: str, subtitle: str) -> QVBoxLayout:
+def page_layout(page: QWidget, title: str, subtitle: str, texts=None) -> QVBoxLayout:
     layout = QVBoxLayout(page)
     layout.setContentsMargins(UI.page_margin_x, UI.page_margin_y, UI.page_margin_x, UI.page_margin_y)
     layout.setSpacing(UI.page_spacing)
     heading = QLabel(title)
+    if texts:
+        texts.bind_text(heading, title)
     heading.setObjectName("PageTitle")
     hint = QLabel(subtitle)
+    if texts:
+        texts.bind_text(hint, subtitle)
     hint.setObjectName("Muted")
     hint.setWordWrap(True)
     header = QVBoxLayout()
@@ -72,4 +76,16 @@ def plain_label(text: str = "", name: str = "") -> QLabel:
     label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     label.setObjectName(name)
     label.setWordWrap(True)
+    return label
+
+
+def text_button(texts, key, **parameters):
+    button = QPushButton()
+    texts.bind_text(button, key, **parameters)
+    return button
+
+
+def text_label(texts, key, name="", **parameters):
+    label = plain_label(name=name)
+    texts.bind_text(label, key, **parameters)
     return label

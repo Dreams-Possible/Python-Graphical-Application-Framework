@@ -1,0 +1,23 @@
+{
+  "storage.category.config": "配置",
+  "storage.category.data": "数据",
+  "storage.category.cache": "缓存",
+  "storage.category.logs": "日志",
+  "storage.busy": "正在处理本地文件…",
+  "storage.cancelled": "已取消",
+  "storage.open": "打开目录",
+  "storage.refresh": "刷新文件",
+  "storage.clear": "清理文件",
+  "storage.hint": "选择类别并刷新，查看此用户的文件。",
+  "storage.file": "文件",
+  "storage.size": "大小",
+  "storage.modified": "更新时间",
+  "storage.open_failed": "系统无法打开该目录，可复制上方路径手动访问。",
+  "storage.clear_cache": "清理本应用的缓存文件？",
+  "storage.clear_logs": "清理本应用旧会话的日志？当前会话日志将保留。",
+  "storage.clear_title": "清理本地文件",
+  "storage.confirm": "清理",
+  "storage.summary.other": "共 {count} 个文件，{size:.1f} KiB；最多展示 500 个",
+  "storage.summary.one": "共 {count} 个文件，{size:.1f} KiB；最多展示 500 个",
+  "storage.kib": "{value} KiB"
+}

@@ -1,5 +1,7 @@
 """SNTP 客户端，只返回采样结果，不修改系统时间。"""
 
+from src.shared.errors import ui_error
+
 from dataclasses import dataclass
 import socket
 import logging
@@ -31,12 +33,12 @@ def _timestamp(raw: bytes, reference: float) -> float:
 def query_time(settings: dict, cancelled: Event) -> TimeSample:
     host = settings["server"].strip()
     if "://" in host or "/" in host:
-        raise ValueError("NTP 服务器请填写主机名，不包含 URL 协议或路径")
+        raise ui_error(ValueError, "errors.ntp_host")
     check_cancelled(cancelled)
     addresses = socket.getaddrinfo(host, settings["port"], type=socket.SOCK_DGRAM)
     LOGGER.debug("NTP 地址解析完成，候选数 %d", len(addresses))
     if not addresses:
-        raise OSError("无法解析时间服务器")
+        raise ui_error(OSError, "errors.ntp_address")
     family, kind, protocol, _, address = addresses[0]
     with socket.socket(family, kind, protocol) as connection:
         connection.settimeout(settings["timeout_seconds"])
@@ -54,11 +56,11 @@ def query_time(settings: dict, cancelled: Event) -> TimeSample:
     check_cancelled(cancelled)
     received = sent + elapsed_end - elapsed_start
     if len(response) < 48 or response[0] & 7 != 4 or response[0] >> 6 == 3:
-        raise ValueError("服务器返回了无效或未同步的 NTP 报文")
+        raise ui_error(ValueError, "errors.ntp_packet")
     if not 1 <= response[1] <= 15 or response[24:32] != request[40:48]:
-        raise ValueError("时间服务器拒绝请求，或返回的请求标识不匹配")
+        raise ui_error(ValueError, "errors.ntp_origin")
     if response[32:40] == b"\0" * 8 or response[40:48] == b"\0" * 8:
-        raise ValueError("服务器没有提供有效时间戳")
+        raise ui_error(ValueError, "errors.ntp_timestamp")
     server_received = _timestamp(response[32:40], sent)
     server_sent = _timestamp(response[40:48], received)
     offset = ((server_received - sent) + (server_sent - received)) / 2

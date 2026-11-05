@@ -24,13 +24,15 @@ from src.shared.logging_service import LoggingService
 from src.shared.paths import UserPaths
 from src.shared.tasks import TaskRunner
 from src.shared.theme import ThemeManager
+from src.shared.localization import Localization
 from src.features.location.service import LocationService, SECTION as LOCATION_SETTINGS
 
 LOGGER = logging.getLogger("workbench.bootstrap")
 
 
-def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeManager) -> ApplicationWindow:
+def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeManager, texts=None) -> ApplicationWindow:
     """只在组合根创建依赖，功能模块不自行寻找其他模块。"""
+    texts = texts if texts is not None else Localization()
     providers = ProviderRegistry()
     providers.register(OpenMeteoProvider())
     registry = SettingsRegistry()
@@ -41,6 +43,7 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
     registry.register(CALENDAR_SETTINGS)
     configuration = Configuration(SettingsRepository(paths.config, registry))
     themes.bind(configuration)
+    texts.bind(configuration)
     tasks = TaskRunner()
     holidays = HolidayService(tasks, paths.cache, configuration)
     location = LocationService(configuration, tasks)
@@ -63,13 +66,14 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
     location.updated.connect(apply_location)
 
     window = ApplicationWindow((
-        PageDefinition("clock", "时钟", "◷", ClockView(clock)),
-        PageDefinition("weather", "天气", "☀", WeatherView(weather)),
-        PageDefinition("calendar", "日历", "", CalendarView(themes, holidays)),
-        PageDefinition("logs", "日志", "≡", LogsView(log_model, themes)),
-        PageDefinition("settings", "设置", "⚙", SettingsView(registry, configuration, storage, location)),
-    ), configuration, tasks, stop_producers)
+        PageDefinition("clock", "app.navigation.clock", "◷", ClockView(clock, texts)),
+        PageDefinition("weather", "app.navigation.weather", "☀", WeatherView(weather, texts)),
+        PageDefinition("calendar", "app.navigation.calendar", "", CalendarView(themes, texts, holidays)),
+        PageDefinition("logs", "app.navigation.logs", "≡", LogsView(log_model, themes, texts)),
+        PageDefinition("settings", "app.navigation.settings", "⚙", SettingsView(registry, configuration, storage, texts, location)),
+    ), configuration, tasks, stop_producers, texts)
     themes.bind_window(window)
+    texts.bind_window(window)
     clock.alert.connect(window.notifications.report)
     weather.alert.connect(window.notifications.report)
     LOGGER.info("应用装配完成：5 个页面，%d 个配置模块", len(registry.sections))

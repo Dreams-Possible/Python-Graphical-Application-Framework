@@ -1,11 +1,12 @@
 """模块内浮岛导航：页面横向排列，由 Qt 属性动画平移切换。"""
+from src.shared.widgets import text_button
 from PySide6.QtCore import QEvent, QPoint, QPropertyAnimation, QEasingCurve, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QWidget, QFrame, QPushButton, QButtonGroup, QHBoxLayout, QVBoxLayout, QGraphicsDropShadowEffect
 
 
 class IslandPages(QWidget):
-    def __init__(self, pages, parent=None, floating=False):
+    def __init__(self, pages, parent=None, floating=False, texts=None):
         super().__init__(parent)
         self.floating = floating
         self.pages = [page for title, page in pages]
@@ -22,7 +23,7 @@ class IslandPages(QWidget):
         group = QButtonGroup(self)
         self.buttons = []
         for index, (title, page) in enumerate(pages):
-            button = QPushButton(title)
+            button = text_button(texts, title) if texts else QPushButton(title)
             button.setObjectName("IslandTab")
             button.setCheckable(True)
             group.addButton(button)

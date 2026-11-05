@@ -1,6 +1,9 @@
 """日志缓冲与界面刷新解耦；隐藏页继续收集但不发布界面状态。"""
 
+from src.shared.errors import error_message
+
 from collections import deque
+from src.shared.messages import message as msg
 import logging
 
 LOGGER = logging.getLogger("workbench.logs")
@@ -17,7 +20,7 @@ class LogsViewModel(QObject):
     replaced = Signal(object)
     limit_changed = Signal(int)
     files_changed = Signal(object)
-    management_changed = Signal(str, bool, str)
+    management_changed = Signal(object, bool, str)
 
     def __init__(self, service: LoggingService, configuration: Configuration, tasks) -> None:
         super().__init__()
@@ -101,7 +104,7 @@ class LogsViewModel(QObject):
             self.history_name = ""
             self._history = ()
             self.refresh_view()
-            self.management_changed.emit("正在查看本次运行的实时日志", False, "")
+            self.management_changed.emit(msg("logs.state.live"), False, "")
             return
         limit = self.configuration.get("logging")["maximum_lines"]
         self._submit("read", lambda stop: self.repository.read(name, limit, stop))
@@ -115,10 +118,10 @@ class LogsViewModel(QObject):
         try:
             self._generation = self.tasks.submit("logs.files", function)
         except RuntimeError as error:
-            self.management_changed.emit(str(error), False, self.history_name)
+            self.management_changed.emit(error_message(error), False, self.history_name)
             return
         self._operation, self._busy = operation, True
-        self.management_changed.emit("正在处理日志文件…", True, self.history_name)
+        self.management_changed.emit(msg("logs.state.busy"), True, self.history_name)
         LOGGER.info("日志文件操作开始：%s", operation)
 
     def _completed(self, key, generation, result, error, cancelled) -> None:
@@ -126,17 +129,17 @@ class LogsViewModel(QObject):
             return
         self._busy = False
         if error or cancelled:
-            self.management_changed.emit("操作未完成（清理可能已部分执行）：" + error, False, self.history_name)
+            self.management_changed.emit(msg("logs.state.failed", detail=error), False, self.history_name)
             return
         if self._operation == "list":
             self.files_changed.emit(result)
-            message = f"找到 {len(result)} 个历史日志文件"
+            message = msg("logs.state.files", count=len(result))
         elif self._operation == "read":
             self.history_name, self._history = result.name, result.entries
             self.refresh_view()
-            message = f"历史日志：{result.name} · {len(result.entries)} 行"
+            message = msg("logs.state.history", name=result.name, count=len(result.entries))
             if result.limited:
-                message += " · 仅展示末尾部分，完整内容请打开文件查看"
+                message = msg("logs.state.limited", status=message)
         else:
             removed, failures = result
             self.history_name, self._history = "", ()
@@ -144,8 +147,8 @@ class LogsViewModel(QObject):
             self._flush()
             self.refresh_view()
             self.files_changed.emit(tuple(name for name in failures if name != self.service.path.name))
-            message = f"已删除 {removed} 个历史文件；当前日志继续记录，无法撤销。"
+            message = msg("logs.state.cleared", count=removed)
             if failures:
-                message += "未清除文件：" + "、".join(failures) + "。请刷新列表重试。"
+                message = msg("logs.state.partial", status=message, names=", ".join(failures))
         LOGGER.info("日志文件操作结束：%s", self._operation)
         self.management_changed.emit(message, False, self.history_name)

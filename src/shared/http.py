@@ -1,5 +1,7 @@
 """可取消、限定响应大小的公开 JSON 接口客户端。"""
 
+from src.shared.errors import ui_error
+
 import json
 import logging
 from threading import Event
@@ -16,7 +18,7 @@ def get_json(endpoint: str, parameters: dict, timeout: int, cancelled: Event, *,
     parsed = urlsplit(endpoint)
     LOGGER.debug("准备 JSON 请求，参数数量 %d（不记录参数值）", len(parameters))
     if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
-        raise ValueError("服务地址必须是有效 HTTP(S) URL，不能包含用户名密码或片段")
+        raise ui_error(ValueError, "errors.http_url")
     separator = "&" if parsed.query else "?"
     url = endpoint + separator + urlencode(parameters)
     check_cancelled(cancelled)
@@ -31,19 +33,19 @@ def get_json(endpoint: str, parameters: dict, timeout: int, cancelled: Event, *,
         while True:
             check_cancelled(cancelled)
             if monotonic() > deadline:
-                raise TimeoutError("数据读取超时")
+                raise ui_error(TimeoutError, "errors.http_timeout")
             chunk = response.read(65536)
             if not chunk:
                 break
             count += len(chunk)
             if count > 4 * 1024 * 1024:
-                raise ValueError("服务器响应超过允许大小")
+                raise ui_error(ValueError, "errors.http_size")
             chunks.append(chunk)
     check_cancelled(cancelled)
     document = json.loads(b"".join(chunks))
     if not isinstance(document, dict) and not (allow_list and isinstance(document, list)):
-        raise ValueError("服务器未返回 JSON 对象")
+        raise ui_error(ValueError, "errors.http_object")
     if isinstance(document, dict) and document.get("error"):
-        raise ValueError(str(document.get("reason", "服务返回错误")))
+        raise ValueError(str(document["reason"])) if document.get("reason") else ui_error(ValueError, "errors.service")
     LOGGER.info("HTTP JSON 请求完成：%d 字节，耗时 %.2f 秒", count, monotonic() - started)
     return document

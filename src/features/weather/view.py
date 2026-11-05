@@ -6,14 +6,16 @@ from PySide6.QtWidgets import QListWidget, QAbstractItemView, QFrame, QHBoxLayou
 from src.shared.island import IslandPages
 from src.features.weather.models import WeatherState
 from src.features.weather.view_model import WeatherViewModel
-from src.shared.widgets import NavigationDelegate, page_layout, plain_label
+from src.shared.widgets import NavigationDelegate, page_layout, plain_label, text_label, text_button
 from src.features.weather.forecast_view import ForecastGraphic, WeatherSymbol
+from src.features.weather.presentation import condition, measurement
 
 
 class WeatherDetails(QWidget):
     """当前天气与搜索页共同使用的天气详情。"""
-    def __init__(self):
+    def __init__(self, texts):
         super().__init__()
+        self.texts = texts
         self._report = None
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -30,30 +32,30 @@ class WeatherDetails(QWidget):
         card_layout = QHBoxLayout(card)
         card_layout.setContentsMargins(24, 20, 24, 20)
         self.temperature = plain_label("—", "Temperature")
-        self.symbol = WeatherSymbol()
-        self.summary = plain_label("尚无天气数据\n可搜索地点，或直接刷新默认地点。", "SectionTitle")
+        self.symbol = WeatherSymbol(texts)
+        self.summary = text_label(texts, "weather.empty", "SectionTitle")
         self.summary.setWordWrap(True)
         card_layout.addWidget(self.temperature)
         card_layout.addWidget(self.symbol)
         card_layout.addSpacing(24)
         card_layout.addWidget(self.summary, 1)
         layout.addWidget(card)
-        self.hours = ForecastGraphic(hourly=True)
-        self.days = ForecastGraphic()
-        self.history = ForecastGraphic()
+        self.hours = ForecastGraphic(texts, hourly=True)
+        self.days = ForecastGraphic(texts)
+        self.history = ForecastGraphic(texts)
         self.section_titles = []
-        for title, graphic in (("未来 24 小时", self.hours), ("每日预报", self.days), ("历史 · 归档预报", self.history)):
+        for title, graphic in (("weather.section.hours", self.hours), ("weather.section.days", self.days), ("weather.section.history", self.history)):
             section = QFrame()
             section.setObjectName("Card")
             section_layout = QVBoxLayout(section)
             section_layout.setContentsMargins(20, 16, 20, 16)
-            heading = plain_label(title, "SectionTitle")
+            heading = text_label(texts, title, "SectionTitle")
             self.section_titles.append(heading)
             section_layout.addWidget(heading)
             if graphic.hourly:
-                section_layout.addWidget(plain_label("温度趋势 · 降水概率 · 风速，左右滚动；点击列展开详情，再次点击收起", "Muted"))
+                section_layout.addWidget(text_label(texts, "weather.hint.hours", "Muted"))
             else:
-                section_layout.addWidget(plain_label("最高 / 最低温度趋势 · 降水 · 风速，左右滚动；点击列展开详情，再次点击收起", "Muted"))
+                section_layout.addWidget(text_label(texts, "weather.hint.days", "Muted"))
             scroller = QScrollArea()
             scroller.setWidgetResizable(True)
             scroller.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -63,36 +65,46 @@ class WeatherDetails(QWidget):
             layout.addWidget(section)
         self.forecast_scrollers = content.findChildren(QScrollArea)
         self._resize_forecasts()
-        source = QLabel('天气数据：<a href="https://open-meteo.com/">Open-Meteo</a> · CC BY 4.0 · 时间为地点当地时间')
-        source.setProperty("themeRichText", source.text())
+        source = QLabel()
+        texts.bind_text(source, "weather.credits")
         source.setOpenExternalLinks(True)
         source.setObjectName("Muted")
         layout.addWidget(source)
         layout.addStretch()
+        texts.changed.connect(self.retranslate)
 
-    def render(self, state):
-        if state.report == self._report:
+    def retranslate(self):
+        if hasattr(self, "_state"):
+            self.render(self._state, force=True)
+
+    def render(self, state, force=False):
+        self._state = state
+        data_changed = state.report != self._report
+        if not data_changed and not force:
             return
         self._report = state.report
         if state.report is None:
             self.temperature.setText("—")
-            self.symbol.set_condition("")
-            self.section_titles[1].setText("每日预报")
-            self.section_titles[2].setText("历史 · 归档预报")
-            self.summary.setText("尚无当前地点的天气数据")
+            self.symbol.set_condition(None)
+            self.texts.bind_text(self.section_titles[1], "weather.section.days")
+            self.texts.bind_text(self.section_titles[2], "weather.section.history")
+            self.texts.bind_text(self.summary, "weather.empty")
             for table in (self.hours, self.days, self.history):
                 table.set_rows(())
             self._resize_forecasts()
             return
         report = state.report
-        self.temperature.setText(report.temperature)
-        self.symbol.set_condition(report.condition)
-        self.summary.setText(f"{report.location} · {report.condition}\n湿度 {report.humidity}   风速 {report.wind}\n{report.observed_at} · {report.timezone}")
-        self.hours.set_rows(report.hourly, report.observed_at[5:13] + ":00")
-        self.days.set_rows(report.daily, report.observed_at[:10])
-        self.history.set_rows(report.history)
-        self.section_titles[1].setText(f"每日预报 · {len(report.daily)} 天")
-        self.section_titles[2].setText(f"历史 · {len(report.history)} 天归档")
+        self.temperature.setText(measurement(self.texts, report.temperature, "temperature"))
+        self.symbol.set_condition(report.weather_code)
+        self.texts.bind_text(self.summary, "weather.summary", location=report.location,
+            condition=condition(self.texts, report.weather_code), humidity=measurement(self.texts, report.humidity, "percent"),
+            wind=measurement(self.texts, report.wind, "wind"), observed=self.texts.date(report.observed_at.date()) + " " + self.texts.time(report.observed_at, seconds=False), zone=report.timezone)
+        if data_changed:
+            self.hours.set_rows(report.hourly, report.observed_at.strftime("%m-%d %H:00"))
+            self.days.set_rows(report.daily, report.observed_at.date().isoformat())
+            self.history.set_rows(report.history)
+        self.texts.bind_text(self.section_titles[1], "weather.section.days_count", count=len(report.daily))
+        self.texts.bind_text(self.section_titles[2], "weather.section.history_count", count=len(report.history))
         self._resize_forecasts()
 
     def _resize_forecasts(self):
@@ -103,20 +115,21 @@ class WeatherDetails(QWidget):
 
 
 class WeatherView(QWidget):
-    def __init__(self, model: WeatherViewModel) -> None:
+    def __init__(self, model: WeatherViewModel, texts) -> None:
         super().__init__()
         self.model = model
+        self.texts = texts
         self._report = None
         self._locations = ()
         self._searched = False
         self._preview = False
-        layout = page_layout(self, "天气", "当前条件、接下来 24 小时，以及更长的天气趋势。")
+        layout = page_layout(self, "weather.page.title", "weather.page.subtitle", texts=texts)
         weather_page, search_page = QWidget(), QWidget()
         weather_layout, search_layout = QVBoxLayout(weather_page), QVBoxLayout(search_page)
         for inner in (weather_layout, search_layout):
             inner.setContentsMargins(0, 0, 0, 0)
             inner.setSpacing(16)
-        self.sections = IslandPages((("当前天气", weather_page), ("搜索地点", search_page)), floating=True)
+        self.sections = IslandPages((("weather.tab.current", weather_page), ("weather.tab.search", search_page)), floating=True, texts=texts)
         layout.addWidget(self.sections, 1)
         search_panel = QWidget()
         search_panel.setMaximumWidth(760)
@@ -124,12 +137,12 @@ class WeatherView(QWidget):
         search_form.setContentsMargins(0, 0, 0, 0)
         search_form.setSpacing(10)
         search_layout.addWidget(search_panel)
-        search_form.addWidget(plain_label("查找城市", "SectionTitle"))
-        search_form.addWidget(plain_label("输入城市名称，选择搜索结果后查看该地区天气。", "Muted"))
+        search_form.addWidget(text_label(texts, "weather.search.title", "SectionTitle"))
+        search_form.addWidget(text_label(texts, "weather.search.hint", "Muted"))
         search_row = QHBoxLayout()
         self.query = QLineEdit(model.configuration.get("weather")["search_query"])
-        self.query.setPlaceholderText("搜索城市或地点，例如 上海、Tokyo")
-        self.search = QPushButton("搜索地点")
+        texts.bind_text(self.query, "weather.search.placeholder", setter="setPlaceholderText")
+        self.search = text_button(texts, "weather.search.button")
         self.search.clicked.connect(self._search)
         self.query.returnPressed.connect(self.search.click)
         search_row.addWidget(self.query, 1)
@@ -147,17 +160,17 @@ class WeatherView(QWidget):
         self.search_error = plain_label(name="Error")
         search_form.addWidget(self.search_status)
         search_form.addWidget(self.search_error)
-        cancel_search = QPushButton("取消搜索")
+        cancel_search = text_button(texts, "weather.search.cancel")
         cancel_search.clicked.connect(model.cancel)
         self.cancel_search = cancel_search
         search_form.addWidget(cancel_search, 0, Qt.AlignmentFlag.AlignLeft)
 
         actions = QHBoxLayout()
         self.status = plain_label(name="Muted")
-        self.refresh = QPushButton("刷新天气")
+        self.refresh = text_button(texts, "weather.refresh")
         self.refresh.setObjectName("Primary")
         self.refresh.clicked.connect(model.refresh)
-        self.cancel = QPushButton("取消请求")
+        self.cancel = text_button(texts, "weather.cancel")
         self.cancel.clicked.connect(model.cancel)
         actions.addWidget(self.status, 1)
         actions.addWidget(self.refresh)
@@ -165,15 +178,19 @@ class WeatherView(QWidget):
         weather_layout.addLayout(actions)
         self.error = plain_label(name="Error")
         weather_layout.addWidget(self.error)
-        self.details = WeatherDetails()
+        self.details = WeatherDetails(texts)
         weather_layout.addWidget(self.details, 1)
-        self.search_details = WeatherDetails()
+        self.search_details = WeatherDetails(texts)
         self.search_details.hide()
         search_layout.addWidget(self.search_details, 1)
         self.search_spacer = QWidget()
         search_layout.addWidget(self.search_spacer, 1)
         model.changed.connect(self.render)
         self.render(model.state)
+        texts.changed.connect(self.retranslate)
+
+    def retranslate(self):
+        self.render(self.model.state)
 
     def _search(self):
         self._searched = True
@@ -193,27 +210,27 @@ class WeatherView(QWidget):
 
     @Slot(object)
     def render(self, state: WeatherState) -> None:
-        self.status.setText(state.status)
+        self.status.setText(self.texts.render(state.status))
         self.locations.setVisible(self._searched and bool(state.locations) and not state.searching)
         self.locations.setEnabled(not state.busy and not state.searching)
         self.search_status.setVisible(self._searched)
         if self._preview:
-            message = state.status
+            message = self.texts.render(state.status)
         elif state.searching:
-            message = "正在搜索…"
+            message = self.texts.get("weather.search.running")
         elif state.error:
-            message = "搜索未完成，请修改关键词或重试。"
-        elif state.status == "地点搜索已取消":
-            message = "搜索已取消。"
+            message = self.texts.get("weather.search.failed")
+        elif getattr(state.status, "key", "") == "weather.search.cancelled":
+            message = self.texts.get("weather.search.cancelled")
         elif state.locations:
-            message = f"找到 {len(state.locations)} 个地点，点击查看天气。"
+            message = self.texts.get("weather.search.results", count=len(state.locations))
         else:
-            message = "未找到匹配地点，请换一个名称重试。"
+            message = self.texts.get("weather.search.no_results")
         self.search_status.setText(message)
-        self.search_error.setText(state.error)
+        self.search_error.setText(self.texts.render(state.error))
         self.search_error.setVisible(self._searched and bool(state.error))
         self.cancel_search.setVisible(state.searching)
-        self.error.setText(state.error)
+        self.error.setText(self.texts.render(state.error))
         self.error.setVisible(bool(state.error))
         self.refresh.setEnabled(not state.busy)
         self.search.setEnabled(not state.searching)

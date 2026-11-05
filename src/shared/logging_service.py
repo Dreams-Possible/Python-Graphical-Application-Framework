@@ -1,5 +1,7 @@
 """标准日志入口与有界批量 UI 缓冲，不在工作线程操作 Qt 控件。"""
 
+from src.shared.errors import ui_error
+
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
@@ -116,7 +118,7 @@ class LoggingService:
         self.file.acquire()
         try:
             if self.file.stream is None or self.path.is_symlink():
-                raise OSError("当前日志文件不可安全清空")
+                raise ui_error(OSError, "errors.log_clear")
             self.file.flush()
             self.file.stream.seek(0)
             self.file.stream.truncate(0)

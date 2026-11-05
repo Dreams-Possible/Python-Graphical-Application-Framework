@@ -19,10 +19,10 @@ class WeatherTests(unittest.TestCase):
         }
         report = parse_report(document, {"location_name": "测试地点"})
         self.assertEqual(len(report.hourly), 24)
-        self.assertTrue(report.hourly[0][0].endswith("12:00"))
+        self.assertEqual((report.hourly[0].when.hour, report.hourly[0].when.minute), (12, 0))
         self.assertEqual(len(report.daily), 16)
         self.assertEqual(len(report.history), 2)
-        self.assertEqual(report.hourly[0][2], "—")
+        self.assertIsNone(report.hourly[0].temperature)
 
     def test_reject_incomplete_response(self):
         with self.assertRaises(ValueError):

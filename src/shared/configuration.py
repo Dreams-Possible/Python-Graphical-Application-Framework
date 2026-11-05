@@ -1,5 +1,8 @@
 """注册式模块设置、默认继承、原子保存与会话状态通知。"""
 
+from src.shared.errors import ui_error, error_message
+from src.shared.messages import message
+
 from copy import deepcopy
 from dataclasses import dataclass
 import json
@@ -21,19 +24,19 @@ LOGGER = logging.getLogger("workbench.configuration")
 @dataclass(frozen=True)
 class SettingField:
     key: str
-    label: str
+    label_key: str
     kind: str = "text"
     minimum: float = 0
     maximum: float = 100000
     choices: tuple[tuple[str, str], ...] = ()
-    hint: str = ""
+    hint_key: str = ""
 
 
 @dataclass(frozen=True)
 class SettingsSection:
     key: str
-    title: str
-    description: str
+    title_key: str
+    description_key: str
     fields: tuple[SettingField, ...]
     migrate: Callable[[int, dict], dict] | None = None
 
@@ -44,7 +47,7 @@ class SettingsRegistry:
 
     def register(self, section: SettingsSection) -> None:
         if not re.fullmatch(r"[a-z][a-z0-9_]*", section.key) or section.key in self._sections:
-            raise ValueError("设置模块 ID 非法或重复")
+            raise ui_error(ValueError, "errors.settings_id")
         self._sections[section.key] = section
         LOGGER.debug("设置模块已注册：%s，字段数 %d", section.key, len(section.fields))
 
@@ -64,7 +67,7 @@ def merge_defaults(default: dict, current: dict) -> dict:
             result[key] = deepcopy(value)
         elif isinstance(value, dict):
             if not isinstance(result[key], dict):
-                raise ValueError(f"配置字段 {key} 应为对象")
+                raise ui_error(ValueError, "errors.settings_field_object", field=key)
             result[key] = merge_defaults(value, result[key])
     return result
 
@@ -81,7 +84,7 @@ class SettingsRepository:
 
     def validate(self, key: str, values: dict) -> None:
         if not isinstance(values, dict):
-            raise ValueError("模块配置值必须是对象")
+            raise ui_error(ValueError, "errors.settings_object")
         for field in self.registry.section(key).fields:
             value = values.get(field.key)
             if field.kind == "bool":
@@ -94,7 +97,7 @@ class SettingsRepository:
                 if field.kind == "choice":
                     valid = valid and value in dict(field.choices)
             if not valid:
-                raise ValueError(f"{field.label}：值无效或不在允许范围内")
+                raise ui_error(ValueError, "errors.settings_invalid", field=message(field.label_key))
 
     def load(self, key: str) -> dict:
         default = self.defaults(key)
@@ -103,9 +106,9 @@ class SettingsRepository:
         try:
             document = json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
             if not isinstance(document, dict) or type(document.get("schema_version", default["schema_version"])) is not int:
-                raise ValueError("schema_version 无效")
+                raise ui_error(ValueError, "errors.schema_version")
             if document.get("schema_version", default["schema_version"]) > default["schema_version"]:
-                raise ValueError("配置由更高版本创建，请升级应用")
+                raise ui_error(ValueError, "errors.future_config")
             migrated = deepcopy(document)
             previous_version = document.get("schema_version", 0)
             migration = self.registry.section(key).migrate
@@ -123,7 +126,7 @@ class SettingsRepository:
             return deepcopy(merged["values"])
         except (OSError, ValueError, TypeError) as error:
             LOGGER.exception("配置加载失败，未静默重置：%s", key)
-            raise ValueError(f"无法加载 {key}.json：{error}") from error
+            raise ui_error(ValueError, "errors.settings_load", file=f"{key}.json", detail=error_message(error)) from error
 
     def save(self, key: str, values: dict) -> None:
         self.validate(key, values)

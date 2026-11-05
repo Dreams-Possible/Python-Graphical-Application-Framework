@@ -1,5 +1,8 @@
 """展开列的宽度、点击命中与收起行为。"""
 import unittest
+from datetime import datetime
+from src.shared.localization import Localization
+from src.features.weather.models import ForecastPoint
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -12,9 +15,9 @@ class ForecastDetailsTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        self.graphic = ForecastGraphic(hourly=True)
-        row = ("10-25 16:00", "晴", "23 °C", "25 °C", "75%", "60%", "0 mm", "5 km/h")
-        self.graphic.set_rows((row,) * 5, row[0])
+        self.graphic = ForecastGraphic(Localization(mode="zh-CN"), hourly=True)
+        row = ForecastPoint(datetime(2026, 10, 25, 16), 0, temperature=23, apparent=25, humidity=75, precipitation_probability=60, precipitation=0, wind=5)
+        self.graphic.set_rows((row,) * 5, "10-25 16:00")
         self.graphic.show()
         self.app.processEvents()
 

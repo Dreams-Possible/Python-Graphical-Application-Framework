@@ -73,7 +73,7 @@ class LocationCalendarTests(unittest.TestCase):
             self.assertEqual(service.data, {})
             self.assertEqual(service.messages, {})
             service.set_location(None)
-            self.assertIn("未确定", service.status(2026))
+            self.assertEqual(service.status(2026).key, "calendar.location_unknown")
 
     def test_international_filters_regional_holidays(self):
         common = dict(date="2026-01-01", countryCode="US", localName="New Year", types=["Public"])

@@ -1,5 +1,10 @@
 """应用级后台任务运行器：独立输入、协作取消与异步退出。"""
 
+from src.shared.errors import error_message
+from src.shared.messages import message
+
+from src.shared.errors import ui_error
+
 from dataclasses import dataclass
 import logging
 from threading import Event
@@ -21,7 +26,7 @@ def check_cancelled(cancelled: Event) -> None:
 
 
 class _Worker(QObject):
-    outcome = Signal(str, int, object, str, bool)
+    outcome = Signal(str, int, object, object, bool)
     finished = Signal()
 
     def __init__(self, key: str, generation: int, function: Callable[[Event], Any], cancelled: Event) -> None:
@@ -41,10 +46,10 @@ class _Worker(QObject):
             state = "成功"
         except TaskCancelled:
             state = "取消"
-            self.outcome.emit(self.key, self.generation, None, "已取消", True)
+            self.outcome.emit(self.key, self.generation, None, message("location.cancelled"), True)
         except Exception as error:
             LOGGER.exception("后台任务失败：%s", self.key)
-            self.outcome.emit(self.key, self.generation, None, str(error), False)
+            self.outcome.emit(self.key, self.generation, None, error_message(error), False)
         finally:
             LOGGER.info("任务结果：%s，代次 %d，%s，耗时 %.2f 秒", self.key, self.generation, state, monotonic() - started)
             self.finished.emit()
@@ -60,7 +65,7 @@ class _Job:
 
 
 class TaskRunner(QObject):
-    completed = Signal(str, int, object, str, bool)
+    completed = Signal(str, int, object, object, bool)
     drained = Signal()
     activity_changed = Signal(int)
 
@@ -72,9 +77,9 @@ class TaskRunner(QObject):
 
     def submit(self, key: str, function: Callable[[Event], Any]) -> int:
         if self._closing:
-            raise RuntimeError("应用正在退出")
+            raise ui_error(RuntimeError, "errors.closing")
         if any(job.key == key for job in self._jobs.values()):
-            raise RuntimeError("该任务仍在结束，请稍后重试")
+            raise ui_error(RuntimeError, "errors.task_finishing")
         self._sequence += 1
         generation = self._sequence
         thread = QThread(self)
@@ -94,7 +99,7 @@ class TaskRunner(QObject):
         LOGGER.info("后台任务开始：%s，代次 %d", key, generation)
         return generation
 
-    @Slot(str, int, object, str, bool)
+    @Slot(str, int, object, object, bool)
     def _deliver(self, key: str, generation: int, result: object, error: str, cancelled: bool) -> None:
         if not self._closing:
             self.completed.emit(key, generation, result, error, cancelled)

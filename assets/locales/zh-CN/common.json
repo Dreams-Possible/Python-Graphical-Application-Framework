@@ -1,0 +1,15 @@
+{
+  "common.unavailable": "—",
+  "common.save": "保存设置",
+  "common.cancel": "取消",
+  "common.close": "关闭",
+  "common.today": "回到今天",
+  "common.language": "软件语言",
+  "common.language.system": "跟随系统",
+  "common.language.zh-CN": "简体中文",
+  "common.language.en-US": "English",
+  "common.application": "日常信息台",
+  "common.format.short_date": "MM-dd",
+  "common.format.time": "HH:mm:ss",
+  "common.format.time_minutes": "HH:mm"
+}

@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject, Signal, Qt
 from src.features.logs.table_model import LogTableModel
 from src.shared.logging_service import LogEntry, TerminalFormatter
 from src.shared.theme import PALETTES
+from src.shared.localization import Localization
 
 
 class Themes(QObject):
@@ -17,7 +18,7 @@ class Themes(QObject):
 class PresentationTests(unittest.TestCase):
     def test_table_capacity_multiline_and_theme(self):
         themes = Themes()
-        model = LogTableModel(themes, 2)
+        model = LogTableModel(themes, 2, Localization(mode="zh-CN"))
         entries = [LogEntry("12:00", "INFO", "test", str(i)) for i in range(5)]
         model.append(entries[:2])
         self.assertEqual(model.append(entries[2:]), 2)

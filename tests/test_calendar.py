@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication
 from src.features.calendar.view import CalendarView
 from src.features.calendar.holidays import parse_days
 from src.shared.theme import ThemeManager
+from src.shared.localization import Localization
 
 
 class CalendarTests(unittest.TestCase):
@@ -14,7 +15,7 @@ class CalendarTests(unittest.TestCase):
 
     def test_view_switch_preserves_selected_date(self):
         themes = ThemeManager(self.app)
-        view = CalendarView(themes)
+        view = CalendarView(themes, Localization(mode="zh-CN"))
         view.shown = view.date = QDate(2026, 11, 5)
         view.refresh()
         item = view.month_grid.item(1, 0)

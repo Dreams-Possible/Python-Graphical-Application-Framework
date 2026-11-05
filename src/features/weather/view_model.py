@@ -1,6 +1,9 @@
 """冻结请求参数，隔离地点搜索和天气更新，拒绝过期结果。"""
 
+from src.shared.errors import error_message
+
 from dataclasses import replace
+from src.shared.messages import message
 import logging
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot
@@ -15,7 +18,7 @@ LOGGER = logging.getLogger("workbench.weather")
 
 class WeatherViewModel(QObject):
     changed = Signal(object)
-    alert = Signal(str)
+    alert = Signal(object)
 
     def __init__(self, configuration: Configuration, tasks: TaskRunner, providers: ProviderRegistry) -> None:
         super().__init__()
@@ -54,7 +57,7 @@ class WeatherViewModel(QObject):
         query = query.strip()
         if not query:
             LOGGER.warning("地点搜索未执行：查询为空")
-            self._set(error="请输入地点名称")
+            self._set(error=message("weather.search.required"))
             return
         if self._state.searching:
             LOGGER.debug("忽略重复地点搜索：上一请求仍在执行")
@@ -67,9 +70,9 @@ class WeatherViewModel(QObject):
             self._search_generation = self.tasks.submit("weather.search", lambda stop: provider.search(query, values, stop))
         except (ValueError, OSError, RuntimeError) as error:
             LOGGER.warning("地点搜索无法启动：%s", type(error).__name__)
-            self._set(error=str(error))
+            self._set(error=error_message(error))
             return
-        self._set(searching=True, error="", status="正在查找地点…")
+        self._set(searching=True, error="", status=message("weather.search.running"))
 
     def select_location(self, index: int) -> None:
         if not 0 <= index < len(self._state.locations):
@@ -80,7 +83,7 @@ class WeatherViewModel(QObject):
             self.configuration.update("weather", location_name=location.name, latitude=location.latitude, longitude=location.longitude)
         except (ValueError, OSError) as error:
             LOGGER.warning("地点配置更新失败：%s", type(error).__name__)
-            self._set(error=str(error))
+            self._set(error=error_message(error))
             return
         self.refresh()
 
@@ -99,9 +102,9 @@ class WeatherViewModel(QObject):
             self._fetch_generation = self.tasks.submit("weather.fetch", lambda stop: provider.fetch(values, stop))
             LOGGER.info("开始天气获取：来源 %s，预报 %d 天，历史 %d 天", values["provider"], values["forecast_days"], values["history_days"])
         except RuntimeError as error:
-            self._set(status=str(error))
+            self._set(status=error_message(error))
             return
-        self._set(busy=True, error="", status=f"正在更新 {values['location_name']}…")
+        self._set(busy=True, error="", status=message("weather.state.updating", location=values["location_name"]))
 
     def cancel(self) -> None:
         self._pending = False
@@ -126,7 +129,7 @@ class WeatherViewModel(QObject):
         if any(updated[key] != previous[key] for key in updated if key not in ("search_query", "refresh_minutes", "auto_refresh")):
             self.cancel()
             self._fetch_generation = self._search_generation = -1
-            self._set(report=None, locations=(), busy=False, searching=False, error="", status="天气设置已更新，请刷新获取当前地点数据")
+            self._set(report=None, locations=(), busy=False, searching=False, error="", status=message("weather.state.settings_changed"))
             self._pending = updated["auto_refresh"]
             QTimer.singleShot(0, self._try_pending)
         elif updated["auto_refresh"] and not previous["auto_refresh"]:
@@ -137,22 +140,22 @@ class WeatherViewModel(QObject):
         self._timer.setInterval(self._values["refresh_minutes"] * 60000)
         self._timer.start() if self._values["auto_refresh"] else self._timer.stop()
 
-    @Slot(str, int, object, str, bool)
+    @Slot(str, int, object, object, bool)
     def _completed(self, key: str, generation: int, result: object, error: str, cancelled: bool) -> None:
         if key == "weather.search" and generation == self._search_generation:
             LOGGER.info("地点搜索结束：状态 %s，结果数 %d", "取消" if cancelled else ("失败" if error else "成功"), len(result or ()))
             self._set(searching=False, locations=() if error or cancelled else result,
-                      status="地点搜索已取消" if cancelled else ("选择下方地点以更新天气" if result else "没有找到匹配地点"), error="" if cancelled else error)
+                      status=message("weather.search.cancelled") if cancelled else (message("weather.search.choose") if result else message("weather.search.empty")), error="" if cancelled else error)
         elif key == "weather.fetch" and generation == self._fetch_generation:
             if cancelled:
-                LOGGER.info("天气更新已取消")
-                self._set(busy=False, status="天气更新已取消")
+                LOGGER.info(message("weather.state.cancelled"))
+                self._set(busy=False, status=message("weather.state.cancelled"))
             elif error:
                 LOGGER.warning("天气更新失败，保留旧结果=%s；原因见后台任务错误日志", self._state.report is not None)
-                self._set(busy=False, error=error, status="更新失败，保留上次结果" if self._state.report else "天气获取失败")
-                self.alert.emit(f"天气获取失败：{error}")
+                self._set(busy=False, error=error, status=message("weather.state.failed_cached") if self._state.report else message("weather.state.failed"))
+                self.alert.emit(message("weather.error.fetch", detail=error))
             else:
-                self._set(busy=False, report=result, error="", status="已更新 · 下方时间均为地点当地时间")
+                self._set(busy=False, report=result, error="", status=message("weather.state.updated"))
                 LOGGER.info("天气更新完成：小时 %d 条，每日 %d 条，历史 %d 条", len(result.hourly), len(result.daily), len(result.history))
         elif key in ("weather.search", "weather.fetch"):
             LOGGER.debug("丢弃过期天气请求结果：%s，代次 %d", key, generation)

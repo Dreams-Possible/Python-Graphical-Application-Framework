@@ -1,0 +1,19 @@
+{
+  "location.unknown": "Current location is not determined",
+  "location.disabled": "Current location is disabled",
+  "location.manual": "Manual location",
+  "location.network": "Network location (outbound IP)",
+  "location.looking_up": "Locating the outbound IP…",
+  "location.applying": "Location settings changed. Applying…",
+  "location.failed": "Network location failed. Retry or choose a manual location.",
+  "location.cancelled": "Cancelled",
+  "location.query_required": "Enter a location name",
+  "location.status": "{source}: {name} · {country} · {zone}",
+  "location.picker.placeholder": "Find your location, e.g. Shanghai, Tokyo, London",
+  "location.picker.search": "Find city",
+  "location.picker.credit": "Results by Open-Meteo / GeoNames. Select a location, then save.",
+  "location.picker.busy": "Searching…",
+  "location.picker.choose": "Select a location, then save to apply.",
+  "location.picker.empty": "No locations found. Try another name.",
+  "location.picker.filled": "Location fields filled. Save to apply."
+}

@@ -1,6 +1,11 @@
 """按公网出口 IP 获取大致位置，不采集 GPS，不持久化原始响应。"""
 
+from src.shared.errors import error_message
+
+from src.shared.errors import ui_error
+
 from dataclasses import dataclass
+from src.shared.messages import message
 import logging
 import math
 from threading import Event
@@ -12,18 +17,18 @@ from src.shared.http import get_json
 
 LOGGER = logging.getLogger("workbench.location")
 
-SECTION = SettingsSection("location", "当前位置", "独立于天气城市。网络模式按请求出口 IP 定位，代理可能改变结果；手动模式可搜索城市后保存。日历始终使用此位置的国家。", (
-    Field("enabled", "启用当前位置", "bool"),
-    Field("mode", "位置来源", "choice", choices=(("network", "网络定位（出口 IP）"), ("manual", "手动选择位置"))),
-    Field("use_for_clock", "时钟使用当前位置时区", "bool"),
-    Field("manual_name", "手动地点名称"),
-    Field("manual_country", "国家／地区代码", hint="ISO 两位代码，例如 CN、JP、US；选择搜索结果后自动填写"),
-    Field("manual_latitude", "纬度", "float", -90, 90),
-    Field("manual_longitude", "经度", "float", -180, 180),
-    Field("manual_timezone", "时区", hint="例如 Asia/Shanghai；选择搜索结果后自动填写"),
-    Field("endpoint", "网络定位接口（ipwho.is）"),
-    Field("geocoding_url", "手动地点搜索接口（Open-Meteo）"),
-    Field("timeout_seconds", "网络超时（秒）", "int", 2, 30),
+SECTION = SettingsSection("location", "settings.location.title", "settings.location.description", (
+    Field("enabled", "settings.location.enabled.label", "bool"),
+    Field("mode", "settings.location.mode.label", "choice", choices=(("network", "settings.location.mode.network"), ("manual", "settings.location.mode.manual"))),
+    Field("use_for_clock", "settings.location.use_for_clock.label", "bool"),
+    Field("manual_name", "settings.location.manual_name.label"),
+    Field("manual_country", "settings.location.manual_country.label", hint_key="settings.location.manual_country.hint"),
+    Field("manual_latitude", "settings.location.manual_latitude.label", "float", -90, 90),
+    Field("manual_longitude", "settings.location.manual_longitude.label", "float", -180, 180),
+    Field("manual_timezone", "settings.location.manual_timezone.label", hint_key="settings.location.manual_timezone.hint"),
+    Field("endpoint", "settings.location.endpoint.label"),
+    Field("geocoding_url", "settings.location.geocoding_url.label"),
+    Field("timeout_seconds", "settings.location.timeout_seconds.label", "int", 2, 30),
 ))
 
 
@@ -38,22 +43,22 @@ class LocationFix:
 
 def parse_location(document: dict) -> LocationFix:
     if document.get("success") is not True:
-        raise ValueError("网络定位服务未返回有效位置")
+        raise ui_error(ValueError, "errors.location_response")
     latitude, longitude = document.get("latitude"), document.get("longitude")
     for value, limit in ((latitude, 90), (longitude, 180)):
         if type(value) not in (int, float) or not math.isfinite(value) or not -limit <= value <= limit:
-            raise ValueError("定位响应经纬度无效")
+            raise ui_error(ValueError, "errors.coordinates")
     zone = document.get("timezone")
     zone_id = zone.get("id") if isinstance(zone, dict) else None
     if not isinstance(zone_id, str) or not QTimeZone(zone_id.encode("utf-8")).isValid():
-        raise ValueError("定位响应时区无效或当前系统不支持")
+        raise ui_error(ValueError, "errors.timezone")
     names = [document.get(key) for key in ("city", "region", "country")]
     name = " / ".join(dict.fromkeys(value for value in names if isinstance(value, str) and value.strip()))
     if not name:
-        raise ValueError("定位响应缺少地点名称")
+        raise ui_error(ValueError, "errors.location_name")
     code = document.get("country_code", "")
     if code and (not isinstance(code, str) or len(code) != 2 or not code.isascii() or not code.isalpha()):
-        raise ValueError("国家代码无效")
+        raise ui_error(ValueError, "errors.country_code")
     return LocationFix(name, latitude, longitude, zone_id, code.upper())
 
 
@@ -68,7 +73,7 @@ def manual_location(values):
         "latitude": values["manual_latitude"], "longitude": values["manual_longitude"],
         "timezone": {"id": values["manual_timezone"].strip()}})
     if not fix.country_code:
-        raise ValueError("请选择包含国家代码的地点")
+        raise ui_error(ValueError, "errors.country_required")
     return fix
 
 
@@ -89,14 +94,14 @@ def search_places(query, values, stop):
 class LocationService(QObject):
     updated = Signal(object)
     started = Signal()
-    status_changed = Signal(str)
-    search_finished = Signal(object, str)
+    status_changed = Signal(object)
+    search_finished = Signal(object, object)
 
     def __init__(self, configuration, tasks) -> None:
         super().__init__()
         self.configuration, self.tasks = configuration, tasks
         self.current = None
-        self.status = "尚未确定当前位置"
+        self.status = message("location.unknown")
         self._search_generation = -1
         self._generation = -1
         self._pending = False
@@ -111,25 +116,25 @@ class LocationService(QObject):
         values = self.configuration.get("location")
         if not values["enabled"]:
             LOGGER.info("当前位置自动应用未启用，使用原有配置")
-            self._publish(None, "当前位置已停用")
+            self._publish(None, message("location.disabled"))
             return
         if values.get("mode", "network") == "manual":
             try:
-                self._publish(manual_location(values), "手动位置")
+                self._publish(manual_location(values), message("location.manual"))
             except ValueError as error:
-                self._publish(None, str(error))
+                self._publish(None, error_message(error))
             return
         if self.tasks.is_active("location.lookup"):
             self._pending = True
             return
         self._pending = False
         LOGGER.info("开始网络定位：只请求大致位置与时区，不记录 IP、坐标或响应正文")
-        self._publish(None, "正在通过请求出口 IP 定位…")
+        self._publish(None, message("location.looking_up"))
         self.started.emit()
         try:
             self._generation = self.tasks.submit("location.lookup", lambda stop: locate(values, stop))
         except RuntimeError as error:
-            self._publish(None, str(error))
+            self._publish(None, error_message(error))
 
     def _configured(self, module: str) -> None:
         if module != "location":
@@ -137,7 +142,7 @@ class LocationService(QObject):
         self.tasks.cancel("location.lookup")
         self._generation = -1
         self._pending = True
-        self._publish(None, "位置配置已更新，正在应用…")
+        self._publish(None, message("location.applying"))
         LOGGER.info("定位配置已应用，旧请求结果失效")
         QTimer.singleShot(0, self._try_pending)
 
@@ -148,7 +153,7 @@ class LocationService(QObject):
 
     def _completed(self, key, generation, result, error, cancelled) -> None:
         if key == "location.search" and generation == self._search_generation and not self._stopped:
-            self.search_finished.emit(result or (), error or ("已取消" if cancelled else ""))
+            self.search_finished.emit(result or (), error or (message("location.cancelled") if cancelled else ""))
             return
         if key != "location.lookup":
             return
@@ -157,26 +162,26 @@ class LocationService(QObject):
             return
         if error or cancelled:
             LOGGER.warning("网络定位%s，当前位置不可用，时钟回退系统时区", "取消" if cancelled else "失败")
-            self._publish(None, "网络定位失败，请重试或选择手动位置")
+            self._publish(None, message("location.failed"))
         else:
             LOGGER.info("网络定位成功，准备发布独立当前位置")
-            self._publish(result, "网络位置（出口 IP）")
+            self._publish(result, message("location.network"))
 
-    def _publish(self, fix, message):
+    def _publish(self, fix, source):
         self.current = fix
-        self.status = message + (f"：{fix.name} · {fix.country_code} · {fix.timezone}" if fix else "")
+        self.status = message("location.status", source=source, name=fix.name, country=fix.country_code, zone=fix.timezone) if fix else source
         self.status_changed.emit(self.status)
         self.updated.emit(fix)
 
     def search(self, query):
         if not query.strip():
-            self.search_finished.emit((), "请输入地点名称")
+            self.search_finished.emit((), message("location.query_required"))
             return
         values = self.configuration.get("location")
         try:
             self._search_generation = self.tasks.submit("location.search", lambda stop: search_places(query.strip(), values, stop))
         except RuntimeError as error:
-            self.search_finished.emit((), str(error))
+            self.search_finished.emit((), error_message(error))
 
     def stop(self) -> None:
         self._stopped = True

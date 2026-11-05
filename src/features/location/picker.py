@@ -1,21 +1,22 @@
 """独立当前位置搜索器；选择只回填表单，保存后才应用。"""
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QListWidget
-from src.shared.widgets import plain_label, NavigationDelegate
+from src.shared.widgets import plain_label, NavigationDelegate, text_button, text_label
 
 
 class LocationPicker(QWidget):
     chosen = Signal(object)
 
-    def __init__(self, service, parent=None):
+    def __init__(self, service, texts, parent=None):
         super().__init__(parent)
+        self.texts = texts
         self.service, self.results = service, ()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         row = QHBoxLayout()
         self.query = QLineEdit()
-        self.query.setPlaceholderText("搜索当前位置，例如 上海、Tokyo、London")
-        self.search_button = QPushButton("搜索城市")
+        texts.bind_text(self.query, "location.picker.placeholder", setter="setPlaceholderText")
+        self.search_button = text_button(texts, "location.picker.search")
         row.addWidget(self.query, 1)
         row.addWidget(self.search_button)
         layout.addLayout(row)
@@ -25,7 +26,7 @@ class LocationPicker(QWidget):
         self.list.setMaximumHeight(150)
         self.list.hide()
         layout.addWidget(self.list)
-        self.status = plain_label("搜索结果由 Open-Meteo / GeoNames 提供，选择后点击保存。", "Muted")
+        self.status = text_label(texts, "location.picker.credit", "Muted")
         layout.addWidget(self.status)
         self.search_button.clicked.connect(self.search)
         self.query.returnPressed.connect(self.search_button.click)
@@ -36,7 +37,7 @@ class LocationPicker(QWidget):
     def search(self):
         self.search_button.setEnabled(False)
         self.list.hide()
-        self.status.setText("正在搜索…")
+        self.texts.bind_text(self.status, "location.picker.busy")
         self.service.search(self.query.text())
 
     def finished(self, results, error):
@@ -45,10 +46,10 @@ class LocationPicker(QWidget):
         self.list.clear()
         self.list.addItems([fix.name + " · " + fix.country_code for fix in results])
         self.list.setVisible(bool(results))
-        self.status.setText(error or ("请选择地点，保存后应用。" if results else "未找到地点，请换个名称。"))
+        self.texts.set_text(self.status, error) if error else self.texts.bind_text(self.status, "location.picker.choose" if results else "location.picker.empty")
 
     def choose(self, item):
         index = self.list.row(item)
         if 0 <= index < len(self.results):
             self.chosen.emit(self.results[index])
-            self.status.setText("已回填位置，点击保存后应用。")
+            self.texts.bind_text(self.status, "location.picker.filled")

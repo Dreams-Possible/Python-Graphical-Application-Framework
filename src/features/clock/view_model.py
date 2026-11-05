@@ -1,6 +1,9 @@
 """时钟页面唯一状态所有者；每秒走时与周期联网分别调度。"""
 
+from src.shared.errors import error_message
+
 from dataclasses import dataclass
+from src.shared.messages import Message, message
 from datetime import datetime, timedelta, timezone
 import logging
 import time
@@ -16,18 +19,22 @@ LOGGER = logging.getLogger("workbench.clock")
 
 @dataclass(frozen=True)
 class ClockState:
-    time_text: str
-    date_text: str
-    timezone_text: str
-    status: str
-    detail: str
+    current: datetime
+    show_seconds: bool
+    timezone_id: str
+    location_timezone: bool
+    status_code: str
+    server: str
+    last_sync: datetime | None
+    offset_seconds: float | None
+    error: Message | str
     busy: bool
     failed: bool
 
 
 class ClockViewModel(QObject):
     changed = Signal(object)
-    alert = Signal(str)
+    alert = Signal(object)
 
     def __init__(self, configuration: Configuration, tasks: TaskRunner) -> None:
         super().__init__()
@@ -40,7 +47,7 @@ class ClockViewModel(QObject):
         self._pending = False
         self._stopped = False
         self._error = ""
-        self._last_sync = "尚未同步"
+        self._last_sync = None
         self._tick = QTimer(self)
         self._tick.setInterval(1000)
         self._tick.timeout.connect(self._publish)
@@ -63,15 +70,11 @@ class ClockViewModel(QObject):
                 current = current.astimezone(timezone(timedelta(seconds=offset), self._location_timezone))
             else:
                 current = current.astimezone()
-        status = "同步中" if self._busy else ("同步失败" if self._error else ("网络时间" if self._sample else "系统时间 · 未校准"))
-        detail = self._error or f"服务器 {values['server']} · 最近同步 {self._last_sync}"
-        if self._sample:
-            detail += f" · 校准偏差 {self._sample.offset_seconds * 1000:+.0f} ms"
-        return ClockState(
-            current.strftime("%H:%M:%S" if values["show_seconds"] else "%H:%M"),
-            current.strftime("%Y 年 %m 月 %d 日"), current.strftime("%Z · UTC%z") + (" · 当前位置" if self._location_timezone and values["display_timezone"] == "local" else ""),
-            status, detail, self._busy, bool(self._error),
-        )
+        status = "syncing" if self._busy else ("failed" if self._error else ("network" if self._sample else "system"))
+        zone_id = (self._location_timezone or bytes(QTimeZone.systemTimeZoneId()).decode("utf-8")) if values["display_timezone"] == "local" else "UTC"
+        return ClockState(current, values["show_seconds"], zone_id, bool(self._location_timezone and values["display_timezone"] == "local"),
+                          status, values["server"], self._last_sync, self._sample.offset_seconds if self._sample else None,
+                          self._error, self._busy, bool(self._error))
 
     def set_active(self, active: bool) -> None:
         self._active = active
@@ -119,7 +122,7 @@ class ClockViewModel(QObject):
         self._busy = False
         self._sample = None
         self._error = ""
-        self._last_sync = "尚未同步"
+        self._last_sync = None
         values = self._configuration.get("clock")
         LOGGER.info("时钟配置已应用：自动同步 %s，间隔 %d 分钟，显示时区 %s", values["auto_sync"], values["sync_minutes"], values["display_timezone"])
         self._sync.setInterval(values["sync_minutes"] * 60000)
@@ -128,7 +131,7 @@ class ClockViewModel(QObject):
         QTimer.singleShot(0, self._try_pending)
         self._publish()
 
-    @Slot(str, int, object, str, bool)
+    @Slot(str, int, object, object, bool)
     def _completed(self, key: str, generation: int, result: object, error: str, cancelled: bool) -> None:
         if key != "clock.sync" or generation != self._generation:
             if key == "clock.sync":
@@ -137,14 +140,14 @@ class ClockViewModel(QObject):
         self._busy = False
         if cancelled:
             LOGGER.info("网络校时已取消")
-            self._error = "同步已取消，继续显示已有时间"
+            self._error = message("clock.cancelled")
         elif error:
             LOGGER.warning("校时失败，保留当前时间来源；原因见后台任务错误日志")
             self._error = error
-            self.alert.emit(f"时间同步失败：{error}")
+            self.alert.emit(message("clock.error", detail=error))
         else:
             self._sample = result
-            self._last_sync = datetime.now().strftime("%H:%M:%S")
+            self._last_sync = datetime.now()
             self._error = ""
             LOGGER.info("网络校时完成，偏差 %.3f 秒", result.offset_seconds)
         self._publish()

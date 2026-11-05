@@ -1,9 +1,12 @@
 """从设置注册信息生成表单；保存时只合并用户实际修改的字段。"""
 
+from src.shared.errors import error_message
+
 import logging
 
-from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtCore import QSignalBlocker, QSize, Qt, QUrl
 from src.shared.ui_metrics import UI
+from src.shared.localization import message
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
@@ -13,14 +16,15 @@ from PySide6.QtWidgets import (
 
 from src.features.settings.storage import StorageView, StorageViewModel
 from src.shared.configuration import Configuration, SettingsRegistry
-from src.shared.widgets import NavigationDelegate, choice_box, page_layout, plain_label
+from src.shared.widgets import NavigationDelegate, choice_box, page_layout, plain_label, text_button
 
 LOGGER = logging.getLogger("workbench.settings")
 
 
 class SettingsView(QWidget):
-    def __init__(self, registry: SettingsRegistry, configuration: Configuration, storage: StorageViewModel, location=None) -> None:
+    def __init__(self, registry: SettingsRegistry, configuration: Configuration, storage: StorageViewModel, texts, location=None) -> None:
         super().__init__()
+        self.texts = texts
         self.registry, self.configuration = registry, configuration
         self.location_service = location
         if location:
@@ -29,7 +33,7 @@ class SettingsView(QWidget):
         self._editors = {}
         self._baseline = {}
         self._reset_dialog = None
-        layout = page_layout(self, "设置", "调整外观与功能偏好，保存后自动记住你的选择。")
+        layout = page_layout(self, "settings.page.title", "settings.page.subtitle", texts=texts)
         body = QHBoxLayout()
         self.categories = QListWidget()
         self.categories.setObjectName("SettingsCategories")
@@ -37,7 +41,7 @@ class SettingsView(QWidget):
         self.categories.setItemDelegate(NavigationDelegate(self.categories))
         self.categories.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.categories.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.categories.addItems([section.title for section in registry.sections] + ["本地文件"])
+        self.categories.addItems([texts.get(section.title_key) for section in registry.sections] + [texts.get("settings.local_files")])
         for index in range(self.categories.count()):
             self.categories.item(index).setSizeHint(QSize(0, UI.navigation_height))
         self.pages = QStackedWidget()
@@ -46,7 +50,7 @@ class SettingsView(QWidget):
         form_layout.setContentsMargins(12, 0, 0, 0)
         self.description = plain_label(name="Muted")
         form_layout.addWidget(self.description)
-        self.open_configuration = QPushButton("打开配置位置")
+        self.open_configuration = text_button(texts, "settings.open_config")
         self.open_configuration.clicked.connect(self._open_configuration)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -56,9 +60,9 @@ class SettingsView(QWidget):
         self.feedback = plain_label(name="Muted")
         form_layout.addWidget(self.feedback)
         actions = QHBoxLayout()
-        reset = QPushButton("恢复当前分类默认配置")
+        reset = text_button(texts, "settings.reset_category")
         reset.clicked.connect(self._reset)
-        save = QPushButton("保存设置")
+        save = text_button(texts, "common.save")
         save.setObjectName("Primary")
         save.clicked.connect(self._save)
         actions.addWidget(self.open_configuration)
@@ -66,7 +70,7 @@ class SettingsView(QWidget):
         actions.addStretch()
         actions.addWidget(save)
         form_layout.addLayout(actions)
-        self.storage = StorageView(storage)
+        self.storage = StorageView(storage, texts)
         self.pages.addWidget(form_page)
         self.pages.addWidget(self.storage)
         body.addWidget(self.categories)
@@ -74,6 +78,7 @@ class SettingsView(QWidget):
         layout.addLayout(body, 1)
         self.categories.currentRowChanged.connect(self._select)
         self.categories.setCurrentRow(0)
+        texts.changed.connect(self.retranslate)
 
     def _select(self, index: int) -> None:
         if index == len(self.registry.sections):
@@ -87,9 +92,9 @@ class SettingsView(QWidget):
         self._key = section.key
         LOGGER.debug("打开设置分类：%s", section.key)
         path = self.configuration.repository.directory / f"{section.key}.json"
-        self.description.setText(section.description)
-        self.configuration_path.setText(f"配置文件：{path}")
-        self.open_configuration.setToolTip(f"打开 {path.name} 所在文件夹")
+        self.texts.bind_text(self.description, section.description_key)
+        self.texts.bind_text(self.configuration_path, "settings.path", path=str(path))
+        self.texts.bind_text(self.open_configuration, "settings.open_hint", setter="setToolTip", name=path.name)
         self._baseline = self.configuration.get(section.key)
         self._editors = {}
         content = QWidget()
@@ -103,7 +108,8 @@ class SettingsView(QWidget):
             self._location_form = form
         for field in section.fields:
             if field.kind == "bool":
-                editor = QCheckBox("启用")
+                editor = QCheckBox()
+                self.texts.bind_text(editor, "settings.enabled")
             elif field.kind in ("int", "float"):
                 editor = QSpinBox() if field.kind == "int" else QDoubleSpinBox()
                 if field.kind == "float":
@@ -112,23 +118,25 @@ class SettingsView(QWidget):
             elif field.kind == "choice":
                 editor = choice_box()
                 for value, label in field.choices:
-                    editor.addItem(label, value)
+                    editor.addItem(self.texts.get(label), value)
             else:
                 editor = QLineEdit()
-            editor.setToolTip(field.hint)
-            editor.setAccessibleName(field.label)
+            self.texts.bind_text(editor, field.hint_key, setter="setToolTip") if field.hint_key else editor.setToolTip("")
+            self.texts.bind_text(editor, field.label_key, setter="setAccessibleName")
             self._editors[field.key] = editor
-            form.addRow(field.label, editor)
+            field_label = QLabel()
+            self.texts.bind_text(field_label, field.label_key)
+            form.addRow(field_label, editor)
             if section.key == "location" and field.key == "mode" and self.location_service:
                 from src.features.location.picker import LocationPicker
                 self.location_hint = plain_label(name="Muted")
                 self.location_status = plain_label(name="Muted")
                 form.addRow(self.location_hint)
                 form.addRow(self.location_status)
-                self.refresh_location = QPushButton("重新通过 IP 定位")
+                self.refresh_location = text_button(self.texts, "settings.retry_ip")
                 self.refresh_location.clicked.connect(self._refresh_network_location)
                 form.addRow(self.refresh_location)
-                self.location_picker = LocationPicker(self.location_service)
+                self.location_picker = LocationPicker(self.location_service, self.texts)
                 self.location_picker.chosen.connect(self._choose_location)
                 form.addRow(self.location_picker)
         old = self.scroll.takeWidget()
@@ -142,7 +150,22 @@ class SettingsView(QWidget):
             self._editors["endpoint"].textChanged.connect(self._location_mode_changed)
             self._editors["timeout_seconds"].valueChanged.connect(self._location_mode_changed)
             self._location_mode_changed()
-        self.feedback.setText("修改后点击保存；切换类别会放弃未保存的编辑。")
+        self.texts.bind_text(self.feedback, "settings.edit_hint")
+
+    def retranslate(self):
+        blocker = QSignalBlocker(self.categories)
+        for index, section in enumerate(self.registry.sections):
+            self.categories.item(index).setText(self.texts.get(section.title_key))
+        self.categories.item(len(self.registry.sections)).setText(self.texts.get("settings.local_files"))
+        if not self._key:
+            return
+        for field in self.registry.section(self._key).fields:
+            editor = self._editors[field.key]
+            if field.kind == "choice":
+                blocked = QSignalBlocker(editor)
+                for index, (value, key) in enumerate(field.choices):
+                    editor.setItemText(index, self.texts.get(key))
+                del blocked
 
     def _location_status_changed(self, message):
         if self._key == "location":
@@ -169,17 +192,17 @@ class SettingsView(QWidget):
         same_mode = saved["enabled"] == enabled and saved["mode"] == self._editors["mode"].currentData()
         clean_network = same_mode and all(self._read(self._editors[key]) == saved[key] for key in ("endpoint", "timeout_seconds"))
         self.refresh_location.setEnabled(enabled and not manual and clean_network)
-        self.refresh_location.setToolTip("使用已保存的接口，通过当前网络出口 IP 定位" if clean_network else "请先保存位置来源及网络配置")
+        self.texts.bind_text(self.refresh_location, "settings.ip_saved" if clean_network else "settings.ip_save_first", setter="setToolTip")
         if not enabled:
-            self.location_hint.setText("保存后停用当前位置，日历不再按位置加载节假日。")
+            self.texts.bind_text(self.location_hint, "settings.location_disabled")
         elif manual:
-            self.location_hint.setText("搜索并选择城市，下方位置字段会自动填写；点击保存后应用。")
+            self.texts.bind_text(self.location_hint, "settings.location_manual")
         else:
-            self.location_hint.setText("通过网络请求的出口 IP 判断位置，代理可能影响结果。保存后自动定位；失败时可点击下方按钮重试。")
+            self.texts.bind_text(self.location_hint, "settings.location_network")
         if not same_mode or (not manual and not clean_network):
-            self.location_status.setText("位置配置尚未保存，点击底部“保存设置”后生效。")
+            self.texts.bind_text(self.location_status, "settings.location_unsaved")
         else:
-            self.location_status.setText(self.location_service.status)
+            self.texts.set_text(self.location_status, self.location_service.status)
 
     def _refresh_network_location(self):
         self._location_mode_changed()
@@ -226,17 +249,15 @@ class SettingsView(QWidget):
             return
         key = self._key
         LOGGER.info("用户请求恢复默认配置：%s，等待确认", key)
-        title = self.registry.section(key).title
+        title = message(self.registry.section(key).title_key)
         dialog = QMessageBox(self)
-        dialog.setWindowTitle("恢复默认配置")
+        self.texts.bind_text(dialog, "settings.reset.title", setter="setWindowTitle")
         dialog.setIcon(QMessageBox.Icon.Warning)
         dialog.setTextFormat(Qt.TextFormat.PlainText)
-        dialog.setText(f"将“{title}”恢复为软件自带默认配置？\n\n"
-                       f"会立即覆盖 {key}.json，并放弃当前分类未保存的修改。"
-                       "其他分类、日志和数据不受影响。此操作没有自动撤销。")
+        self.texts.bind_text(dialog, "settings.reset.prompt", title=title, file_key=key)
         dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
-        dialog.button(QMessageBox.StandardButton.Yes).setText("恢复默认")
-        dialog.button(QMessageBox.StandardButton.Cancel).setText("取消")
+        self.texts.bind_text(dialog.button(QMessageBox.StandardButton.Yes), "settings.reset.confirm")
+        self.texts.bind_text(dialog.button(QMessageBox.StandardButton.Cancel), "common.cancel")
         dialog.setDefaultButton(QMessageBox.StandardButton.Cancel)
         self._reset_dialog = dialog
         dialog.finished.connect(lambda result: self._finish_reset(key, result))
@@ -252,21 +273,21 @@ class SettingsView(QWidget):
         try:
             self.configuration.restore_defaults(key)
         except (ValueError, OSError) as error:
-            self.feedback.setText(f"恢复失败，原配置未改变：{error}")
+            self.texts.bind_text(self.feedback, "settings.reset.failed", detail=error_message(error))
             return
         if key == self._key:
             self._baseline = self.configuration.get(key)
             self._fill(self._baseline)
-            self.feedback.setText("当前分类已恢复默认并保存，无需再次保存。窗口尺寸和启动页面下次启动生效。")
+            self.texts.bind_text(self.feedback, "settings.reset.done")
 
     def _open_configuration(self) -> None:
         LOGGER.info("请求打开配置目录：模块 %s", self._key)
         directory = self.configuration.repository.directory
         if QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory))):
-            self.feedback.setText(f"已请求打开配置目录，对应文件：{self._key}.json。手动修改文件后请重启应用。")
+            self.texts.bind_text(self.feedback, "settings.open.done", file_key=self._key)
         else:
             LOGGER.warning("配置目录打开失败：模块 %s", self._key)
-            self.feedback.setText(f"无法打开文件夹，请复制上方路径手动访问：{self._key}.json")
+            self.texts.bind_text(self.feedback, "settings.open.failed", file_key=self._key)
 
     def _save(self) -> None:
         LOGGER.info("用户提交设置表单：%s", self._key)
@@ -282,8 +303,8 @@ class SettingsView(QWidget):
             self.configuration.save(self._key, values)
         except (ValueError, OSError) as error:
             LOGGER.warning("设置保存失败：%s，错误类型 %s", self._key, type(error).__name__)
-            self.feedback.setText(f"保存失败：{error}")
+            self.texts.bind_text(self.feedback, "settings.save.failed", detail=error_message(error))
             return
         self._baseline = values
         self._fill(values)
-        self.feedback.setText("配置已保存。")
+        self.texts.bind_text(self.feedback, "settings.save.done")

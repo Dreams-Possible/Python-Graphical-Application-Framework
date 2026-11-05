@@ -1,0 +1,23 @@
+{
+  "storage.category.config": "Configuration",
+  "storage.category.data": "Data",
+  "storage.category.cache": "Cache",
+  "storage.category.logs": "Logs",
+  "storage.busy": "Processing local files…",
+  "storage.cancelled": "Cancelled",
+  "storage.open": "Open folder",
+  "storage.refresh": "Refresh files",
+  "storage.clear": "Clean up files",
+  "storage.hint": "Choose a category and refresh to view this user’s files.",
+  "storage.file": "File",
+  "storage.size": "Size",
+  "storage.modified": "Modified",
+  "storage.open_failed": "The system could not open the folder. Copy the path above to open it manually.",
+  "storage.clear_cache": "Delete this application’s cached files?",
+  "storage.clear_logs": "Delete previous session logs? The current session log will be kept.",
+  "storage.clear_title": "Clean up local files",
+  "storage.confirm": "Clean up",
+  "storage.summary.other": "{count} files, {size:.1f} KiB; displaying up to 500",
+  "storage.summary.one": "{count} file, {size:.1f} KiB; displaying up to 500",
+  "storage.kib": "{value} KiB"
+}
