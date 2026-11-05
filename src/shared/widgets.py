@@ -2,6 +2,7 @@
 
 from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHeaderView, QLabel, QListView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 from PySide6.QtCore import Qt
+from src.shared.ui_metrics import UI
 
 
 class NavigationDelegate(QStyledItemDelegate):
@@ -23,15 +24,15 @@ def choice_box() -> QComboBox:
 
 def page_layout(page: QWidget, title: str, subtitle: str) -> QVBoxLayout:
     layout = QVBoxLayout(page)
-    layout.setContentsMargins(28, 24, 28, 24)
-    layout.setSpacing(16)
+    layout.setContentsMargins(UI.page_margin_x, UI.page_margin_y, UI.page_margin_x, UI.page_margin_y)
+    layout.setSpacing(UI.page_spacing)
     heading = QLabel(title)
     heading.setObjectName("PageTitle")
     hint = QLabel(subtitle)
     hint.setObjectName("Muted")
     hint.setWordWrap(True)
     header = QVBoxLayout()
-    header.setSpacing(4)
+    header.setSpacing(UI.heading_spacing)
     header.addWidget(heading)
     header.addWidget(hint)
     layout.addLayout(header)

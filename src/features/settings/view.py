@@ -2,7 +2,8 @@
 
 import logging
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QSize, Qt, QUrl
+from src.shared.ui_metrics import UI
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
@@ -29,11 +30,13 @@ class SettingsView(QWidget):
         body = QHBoxLayout()
         self.categories = QListWidget()
         self.categories.setObjectName("SettingsCategories")
-        self.categories.setFixedWidth(168)
+        self.categories.setFixedWidth(UI.settings_categories_width)
         self.categories.setItemDelegate(NavigationDelegate(self.categories))
         self.categories.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.categories.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.categories.addItems([section.title for section in registry.sections] + ["本地文件"])
+        for index in range(self.categories.count()):
+            self.categories.item(index).setSizeHint(QSize(0, UI.navigation_height))
         self.pages = QStackedWidget()
         form_page = QWidget()
         form_layout = QVBoxLayout(form_page)

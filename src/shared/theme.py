@@ -6,9 +6,10 @@ from string import Template
 from PySide6.QtCore import QByteArray, QObject, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QListWidget
 
 from src.shared.paths import resource_path
+from src.shared.ui_metrics import UI
 
 LOGGER = logging.getLogger("workbench.theme")
 
@@ -34,7 +35,13 @@ QPushButton#IslandTab { background: transparent; color: $muted; border: 0; borde
 QPushButton#IslandTab:hover { background: $hover; color: $text; }
 QPushButton#IslandTab:checked { background: $selected; color: $accent; font-weight: 600; }
 QPushButton#IslandTab:focus { color: $accent; }
-QWidget#Sidebar { background: $surface; border-right: 1px solid $border; }
+QSplitter::handle { background: $surface; }
+QSplitter::handle:hover { background: $surface; }
+QListWidget#SidebarList { background: transparent; border: 0; outline: 0; }
+QListWidget#SidebarList::item { border: 0; border-radius: 8px; margin-bottom: ${navigation_gap}px; }
+QListWidget#SidebarList::item:hover { background: $hover; }
+QListWidget#SidebarList::item:selected { background: $selected; color: $accent; }
+QWidget#Sidebar { background: $surface; border: 0; }
 QLabel { background: transparent; }
 QLabel#Brand { font-size: 16px; font-weight: 600; color: $text; }
 QLabel#BrandCaption { font-size: 10px; color: $muted; font-family: 'Segoe UI', sans-serif; }
@@ -59,7 +66,21 @@ QPushButton:focus { border-color: $accent; }
 QPushButton#Primary { background: $accent; color: $button_text; border-color: $accent; }
 QPushButton#Primary:hover { background: $selected; color: $text; }
 QPushButton#Primary:disabled { background: $border; color: $disabled; border-color: $border; }
-QPushButton#Navigation { text-align: left; border: 1px solid transparent; background: transparent; padding: 13px 16px; }
+QPushButton#Navigation { text-align: left; border: 1px solid transparent; background: transparent; padding: 5px 12px; }
+QPushButton#Navigation[collapsed="true"] { padding: 0; text-align: center; }
+QPushButton#SidebarToggle { background: transparent; border: 0; padding: 0; font-size: 19px; }
+QPushButton#SidebarToggle:hover { background: $hover; }
+QWidget#TitleBar { background: $surface; border: 0; }
+QLabel#WindowBrand { color: $accent; font-size: 15px; font-weight: 600; }
+QPushButton#WindowControl, QPushButton#WindowClose { background: transparent; color: $text; border: 0; border-radius: 0; padding: 0; font-size: 18px; }
+QPushButton#WindowControl:hover { background: $hover; }
+QPushButton#WindowClose:hover { background: $error_surface; color: $error; }
+QMenuBar { background: $surface; color: $text; padding: 0 4px; border: 0; }
+QMenuBar::item { background: transparent; padding: 5px 10px; }
+QMenuBar::item:selected { background: $hover; }
+QMenuBar::item:pressed { background: $selected; }
+QStatusBar { background: $surface; color: $muted; border-top: 1px solid $border; }
+QStatusBar::item { border: 0; }
 QPushButton#Navigation:hover { background: $hover; }
 QPushButton#Navigation:checked { color: $accent; background: $selected; font-weight: 600; }
 QPushButton#Navigation:focus { border-color: transparent; background: $hover; }
@@ -122,8 +143,8 @@ QListWidget#LocationResults::item { padding: 9px 12px; border-radius: 5px; }
 QListWidget#LocationResults::item:hover { background: $hover; }
 QListWidget#LocationResults::item:selected { background: $selected; color: $accent; }
 QListWidget#SettingsCategories { background: transparent; border: 0; outline: 0; }
-QListWidget#SettingsCategories::item { min-height: 24px; padding: 10px 14px;
-    margin: 3px 0; border: 1px solid transparent; border-radius: 8px; }
+QListWidget#SettingsCategories::item { padding: 0 12px;
+    margin: 0 0 ${navigation_gap}px 0; border: 1px solid transparent; border-radius: 8px; }
 QListWidget#SettingsCategories::item:hover { background: $hover; }
 QListWidget#SettingsCategories::item:selected { background: $selected; color: $accent; font-weight: 600; }
 QListWidget#SettingsCategories:focus::item:selected { border-color: $accent; }
@@ -156,6 +177,9 @@ QPushButton#Danger:hover { background: $error_surface; }
 QPushButton#Danger:disabled { color: $disabled; border-color: $border; background: $alternate; }
 QToolTip { background: $surface; color: $text; border: 1px solid $border; padding: 8px; }
 """)
+
+
+STYLE = Template(STYLE.safe_substitute(navigation_gap=UI.navigation_gap))
 
 
 def effective_theme(mode: str, system_dark: bool) -> str:
@@ -194,8 +218,10 @@ class ThemeManager(QObject):
 
     def update_navigation_icons(self, window) -> None:
         """统一导航图标尺寸，并为普通、选中和禁用状态应用主题色。"""
-        for button in window.findChildren(QPushButton, "Navigation"):
-            name = button.property("navigationIcon")
+        targets = [(button, button.property("navigationIcon")) for button in window.findChildren(QPushButton, "Navigation")]
+        for listing in window.findChildren(QListWidget, "SidebarList"):
+            targets.extend((listing.item(i), listing.item(i).data(Qt.ItemDataRole.UserRole + 1)) for i in range(listing.count()))
+        for button, name in targets:
             source = resource_path(f"icons/{name}.svg").read_text(encoding="utf-8")
             icon = QIcon()
             for mode in (QIcon.Mode.Normal, QIcon.Mode.Active, QIcon.Mode.Selected, QIcon.Mode.Disabled):
