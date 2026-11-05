@@ -55,7 +55,7 @@ class ApplicationWindow(QMainWindow):
         from src.app.sidebar import SidebarDelegate, SidebarList
         self._nav_list = SidebarList()
         self._settings_list = SidebarList()
-        self._settings_list.setFixedHeight(UI.navigation_row_height)
+        self._settings_list.setFixedHeight(UI.navigation_row_height * sum(page.key in ("logs", "settings") for page in pages))
         for listing in (self._nav_list, self._settings_list):
             listing.setObjectName("SidebarList")
             listing.setIconSize(QSize(UI.navigation_icon, UI.navigation_icon))
@@ -71,7 +71,7 @@ class ApplicationWindow(QMainWindow):
         initial = 0
         self._navigation_items = []
         for index, page in enumerate(pages):
-            listing = self._settings_list if page.key == "settings" else self._nav_list
+            listing = self._settings_list if page.key in ("logs", "settings") else self._nav_list
             item = QListWidgetItem(page.title, listing)
             item.setData(Qt.ItemDataRole.UserRole, index)
             item.setData(Qt.ItemDataRole.UserRole + 1, page.key)
@@ -221,27 +221,38 @@ class ApplicationWindow(QMainWindow):
         from version import APP_VERSION
         dialog = QDialog(self)
         dialog.setWindowTitle("关于 Daylight")
+        dialog.setMinimumSize(UI.about_width, UI.about_height)
+        dialog.resize(UI.about_width, UI.about_height)
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setContentsMargins(UI.about_margin, UI.about_margin, UI.about_margin, UI.about_margin)
+        layout.setSpacing(16)
         from src.shared.brand_mark import BrandMark
         brand_row = QHBoxLayout()
-        brand_row.setSpacing(10)
-        brand_row.addWidget(BrandMark(dialog))
+        brand_row.setSpacing(18)
+        brand_row.addWidget(BrandMark(dialog, UI.about_brand_size))
         brand_text = QVBoxLayout()
         brand_text.setSpacing(2)
         brand = QLabel("日常信息台")
-        brand.setObjectName("Brand")
+        brand.setObjectName("AboutBrand")
         caption = QLabel("DAYLIGHT")
-        caption.setObjectName("BrandCaption")
+        caption.setObjectName("AboutCaption")
         brand_text.addWidget(brand)
         brand_text.addWidget(caption)
         brand_row.addLayout(brand_text)
         layout.addLayout(brand_row)
-        layout.addWidget(QLabel(f"版本 {APP_VERSION}\n时钟、计时器与天气"))
+        layout.addSpacing(4)
+        version = QLabel(f"版本 {APP_VERSION}")
+        version.setObjectName("Muted")
+        layout.addWidget(version)
+        description = QLabel("时钟、秒表、计时器、天气与日历。")
+        description.setWordWrap(True)
+        layout.addWidget(description)
+        layout.addStretch()
         close = QPushButton("关闭")
         close.clicked.connect(dialog.close)
-        layout.addWidget(close)
+        close.setMinimumWidth(100)
+        layout.addWidget(close, 0, Qt.AlignmentFlag.AlignRight)
         dialog.open()
 
     def _activate_navigation(self, index) -> None:

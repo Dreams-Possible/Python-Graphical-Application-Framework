@@ -19,9 +19,12 @@ LOGGER = logging.getLogger("workbench.settings")
 
 
 class SettingsView(QWidget):
-    def __init__(self, registry: SettingsRegistry, configuration: Configuration, storage: StorageViewModel) -> None:
+    def __init__(self, registry: SettingsRegistry, configuration: Configuration, storage: StorageViewModel, location=None) -> None:
         super().__init__()
         self.registry, self.configuration = registry, configuration
+        self.location_service = location
+        if location:
+            location.status_changed.connect(self._location_status_changed)
         self._key = ""
         self._editors = {}
         self._baseline = {}
@@ -45,10 +48,11 @@ class SettingsView(QWidget):
         form_layout.addWidget(self.description)
         self.open_configuration = QPushButton("打开配置位置")
         self.open_configuration.clicked.connect(self._open_configuration)
-        form_layout.addWidget(self.open_configuration, 0, Qt.AlignmentFlag.AlignLeft)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         form_layout.addWidget(self.scroll, 1)
+        self.configuration_path = plain_label(name="Muted")
+        form_layout.addWidget(self.configuration_path)
         self.feedback = plain_label(name="Muted")
         form_layout.addWidget(self.feedback)
         actions = QHBoxLayout()
@@ -57,6 +61,7 @@ class SettingsView(QWidget):
         save = QPushButton("保存设置")
         save.setObjectName("Primary")
         save.clicked.connect(self._save)
+        actions.addWidget(self.open_configuration)
         actions.addWidget(reset)
         actions.addStretch()
         actions.addWidget(save)
@@ -82,7 +87,8 @@ class SettingsView(QWidget):
         self._key = section.key
         LOGGER.debug("打开设置分类：%s", section.key)
         path = self.configuration.repository.directory / f"{section.key}.json"
-        self.description.setText(section.description + f"\n配置文件：{path}")
+        self.description.setText(section.description)
+        self.configuration_path.setText(f"配置文件：{path}")
         self.open_configuration.setToolTip(f"打开 {path.name} 所在文件夹")
         self._baseline = self.configuration.get(section.key)
         self._editors = {}
@@ -93,6 +99,8 @@ class SettingsView(QWidget):
         form.setSpacing(16)
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        if section.key == "location":
+            self._location_form = form
         for field in section.fields:
             if field.kind == "bool":
                 editor = QCheckBox("启用")
@@ -111,12 +119,83 @@ class SettingsView(QWidget):
             editor.setAccessibleName(field.label)
             self._editors[field.key] = editor
             form.addRow(field.label, editor)
+            if section.key == "location" and field.key == "mode" and self.location_service:
+                from src.features.location.picker import LocationPicker
+                self.location_hint = plain_label(name="Muted")
+                self.location_status = plain_label(name="Muted")
+                form.addRow(self.location_hint)
+                form.addRow(self.location_status)
+                self.refresh_location = QPushButton("重新通过 IP 定位")
+                self.refresh_location.clicked.connect(self._refresh_network_location)
+                form.addRow(self.refresh_location)
+                self.location_picker = LocationPicker(self.location_service)
+                self.location_picker.chosen.connect(self._choose_location)
+                form.addRow(self.location_picker)
         old = self.scroll.takeWidget()
         if old:
             old.deleteLater()
         self.scroll.setWidget(content)
         self._fill(self._baseline)
+        if section.key == "location":
+            self._editors["mode"].currentIndexChanged.connect(self._location_mode_changed)
+            self._editors["enabled"].toggled.connect(self._location_mode_changed)
+            self._editors["endpoint"].textChanged.connect(self._location_mode_changed)
+            self._editors["timeout_seconds"].valueChanged.connect(self._location_mode_changed)
+            self._location_mode_changed()
         self.feedback.setText("修改后点击保存；切换类别会放弃未保存的编辑。")
+
+    def _location_status_changed(self, message):
+        if self._key == "location":
+            self._location_mode_changed()
+
+    def _location_mode_changed(self, *_):
+        if self._key != "location":
+            return
+        manual = self._editors["mode"].currentData() == "manual"
+        enabled = self._editors["enabled"].isChecked()
+        form = self._location_form
+        for key, editor in self._editors.items():
+            if key.startswith("manual_") or key == "geocoding_url":
+                form.setRowVisible(editor, enabled and manual)
+            elif key == "endpoint":
+                form.setRowVisible(editor, enabled and not manual)
+            elif key in ("use_for_clock", "timeout_seconds"):
+                form.setRowVisible(editor, enabled)
+        if not self.location_service:
+            return
+        form.setRowVisible(self.location_picker, enabled and manual)
+        form.setRowVisible(self.refresh_location, enabled and not manual)
+        saved = self.configuration.get("location")
+        same_mode = saved["enabled"] == enabled and saved["mode"] == self._editors["mode"].currentData()
+        clean_network = same_mode and all(self._read(self._editors[key]) == saved[key] for key in ("endpoint", "timeout_seconds"))
+        self.refresh_location.setEnabled(enabled and not manual and clean_network)
+        self.refresh_location.setToolTip("使用已保存的接口，通过当前网络出口 IP 定位" if clean_network else "请先保存位置来源及网络配置")
+        if not enabled:
+            self.location_hint.setText("保存后停用当前位置，日历不再按位置加载节假日。")
+        elif manual:
+            self.location_hint.setText("搜索并选择城市，下方位置字段会自动填写；点击保存后应用。")
+        else:
+            self.location_hint.setText("通过网络请求的出口 IP 判断位置，代理可能影响结果。保存后自动定位；失败时可点击下方按钮重试。")
+        if not same_mode or (not manual and not clean_network):
+            self.location_status.setText("位置配置尚未保存，点击底部“保存设置”后生效。")
+        else:
+            self.location_status.setText(self.location_service.status)
+
+    def _refresh_network_location(self):
+        self._location_mode_changed()
+        if self.refresh_location.isEnabled():
+            self.location_service.refresh()
+
+    def _choose_location(self, fix):
+        if self._key != "location":
+            return
+        values = {"manual_name": fix.name, "manual_country": fix.country_code,
+                  "manual_latitude": fix.latitude, "manual_longitude": fix.longitude,
+                  "manual_timezone": fix.timezone}
+        for key, value in values.items():
+            editor = self._editors[key]
+            editor.setValue(value) if isinstance(editor, QDoubleSpinBox) else editor.setText(value)
+        self._editors["mode"].setCurrentIndex(self._editors["mode"].findData("manual"))
 
     def _fill(self, values: dict) -> None:
         for key, editor in self._editors.items():
@@ -129,6 +208,8 @@ class SettingsView(QWidget):
                 editor.setCurrentIndex(editor.findData(value))
             else:
                 editor.setText(value)
+        if self._key == "location":
+            self._location_mode_changed()
 
     def _read(self, editor):
         if isinstance(editor, QCheckBox):
@@ -195,6 +276,9 @@ class SettingsView(QWidget):
             if edited != self._baseline[key]:
                 values[key] = edited
         try:
+            if self._key == "location" and values["enabled"] and values["mode"] == "manual":
+                from src.features.location.service import manual_location
+                manual_location(values)
             self.configuration.save(self._key, values)
         except (ValueError, OSError) as error:
             LOGGER.warning("设置保存失败：%s，错误类型 %s", self._key, type(error).__name__)

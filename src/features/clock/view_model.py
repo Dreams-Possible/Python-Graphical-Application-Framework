@@ -69,7 +69,7 @@ class ClockViewModel(QObject):
             detail += f" · 校准偏差 {self._sample.offset_seconds * 1000:+.0f} ms"
         return ClockState(
             current.strftime("%H:%M:%S" if values["show_seconds"] else "%H:%M"),
-            current.strftime("%Y 年 %m 月 %d 日"), current.strftime("%Z · UTC%z") + (" · IP 定位" if self._location_timezone and values["display_timezone"] == "local" else ""),
+            current.strftime("%Y 年 %m 月 %d 日"), current.strftime("%Z · UTC%z") + (" · 当前位置" if self._location_timezone and values["display_timezone"] == "local" else ""),
             status, detail, self._busy, bool(self._error),
         )
 
@@ -81,7 +81,7 @@ class ClockViewModel(QObject):
 
     def set_location_timezone(self, zone_id: str) -> None:
         self._location_timezone = zone_id
-        LOGGER.info("时钟时区来源更新：%s", "网络当前位置" if zone_id else "系统时区（UTC 选项保持优先）")
+        LOGGER.info("时钟时区来源更新：%s", "当前位置" if zone_id else "系统时区（UTC 选项保持优先）")
         self._publish()
 
     @Slot()

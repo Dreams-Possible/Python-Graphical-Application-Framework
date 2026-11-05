@@ -12,7 +12,7 @@ from src.shared.tasks import check_cancelled
 LOGGER = logging.getLogger("workbench.http")
 
 
-def get_json(endpoint: str, parameters: dict, timeout: int, cancelled: Event) -> dict:
+def get_json(endpoint: str, parameters: dict, timeout: int, cancelled: Event, *, allow_list: bool = False) -> dict | list:
     parsed = urlsplit(endpoint)
     LOGGER.debug("准备 JSON 请求，参数数量 %d（不记录参数值）", len(parameters))
     if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
@@ -41,9 +41,9 @@ def get_json(endpoint: str, parameters: dict, timeout: int, cancelled: Event) ->
             chunks.append(chunk)
     check_cancelled(cancelled)
     document = json.loads(b"".join(chunks))
-    if not isinstance(document, dict):
+    if not isinstance(document, dict) and not (allow_list and isinstance(document, list)):
         raise ValueError("服务器未返回 JSON 对象")
-    if document.get("error"):
+    if isinstance(document, dict) and document.get("error"):
         raise ValueError(str(document.get("reason", "服务返回错误")))
     LOGGER.info("HTTP JSON 请求完成：%d 字节，耗时 %.2f 秒", count, monotonic() - started)
     return document

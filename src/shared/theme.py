@@ -43,10 +43,16 @@ QListWidget#SidebarList::item:hover { background: $hover; }
 QListWidget#SidebarList::item:selected { background: $selected; color: $accent; }
 QWidget#Sidebar { background: $surface; border: 0; }
 QLabel { background: transparent; }
+QLabel#AboutBrand { font-size: 24px; font-weight: 600; color: $text; }
+QLabel#AboutCaption { font-size: 12px; color: $muted; }
 QLabel#Brand { font-size: 16px; font-weight: 600; color: $text; }
 QLabel#BrandCaption { font-size: 10px; color: $muted; font-family: 'Segoe UI', sans-serif; }
 QLabel#BrandMark { background: $selected; border-radius: 12px; }
 QFrame#Divider { background: $border; border: 0; }
+QLabel#CalendarDay { font-size: 24px; border: 2px solid $accent; border-radius: 10px; padding: 20px; }
+QLabel#CalendarDay[current="true"], QLabel#SectionTitle[current="true"] { color: $accent; }
+QTableWidget#CalendarGrid { background: $surface; border: 0; outline: 0; }
+QPushButton:checked { background: $selected; color: $accent; }
 QLabel#PageTitle { font-size: 24px; font-weight: 600; }
 QLabel#SectionTitle { font-size: 17px; font-weight: 600; }
 QLabel#Muted { color: $muted; font-size: 12px; }

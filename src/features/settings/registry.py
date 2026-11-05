@@ -8,7 +8,7 @@ def register_application(registry: SettingsRegistry) -> None:
         Field("theme", "主题", "choice", choices=(("system", "跟随系统"), ("light", "Daylight · 浅色"), ("dark", "Nightfall · 深色"))),
     )))
     registry.register(SettingsSection("app", "应用", "窗口尺寸和启动页面在下次启动时使用。", (
-        Field("initial_page", "启动页面", "choice", choices=(("clock", "时钟"), ("weather", "天气"), ("logs", "日志"), ("settings", "设置"))),
+        Field("initial_page", "启动页面", "choice", choices=(("clock", "时钟"), ("weather", "天气"), ("calendar", "日历"), ("logs", "日志"), ("settings", "设置"))),
         Field("window_width", "窗口宽度", "int", 960, 3840),
         Field("window_height", "窗口高度", "int", 680, 2160),
     )))

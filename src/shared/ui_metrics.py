@@ -18,6 +18,10 @@ class UiMetrics:
     page_spacing: int = 10
     heading_spacing: int = 4
     settings_categories_width: int = 168
+    about_width: int = 460
+    about_height: int = 310
+    about_brand_size: int = 64
+    about_margin: int = 32
 
     @property
     def navigation_row_height(self):

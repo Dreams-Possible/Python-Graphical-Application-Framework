@@ -7,9 +7,9 @@ from src.shared.paths import resource_path
 
 
 class BrandMark(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, size=40):
         super().__init__(parent)
-        self.setFixedSize(40, 40)
+        self.setFixedSize(size, size)
         self.setAccessibleName("Daylight 日出标志")
         self.source = resource_path("icons/sunrise.svg").read_text(encoding="utf-8")
 
@@ -18,8 +18,8 @@ class BrandMark(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(self.palette().color(QPalette.ColorRole.Highlight))
-        painter.drawRoundedRect(QRectF(self.rect()), 12, 12)
+        painter.drawRoundedRect(QRectF(self.rect()), self.width() * 0.3, self.height() * 0.3)
         color = self.palette().color(QPalette.ColorRole.Link).name()
         renderer = QSvgRenderer(QByteArray(self.source.replace("currentColor", color).encode()))
-        renderer.render(painter, QRectF(8, 8, 24, 24))
+        renderer.render(painter, QRectF(self.width() * 0.2, self.height() * 0.2, self.width() * 0.6, self.height() * 0.6))
         painter.end()

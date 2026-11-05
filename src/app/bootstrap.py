@@ -3,6 +3,9 @@
 from PySide6.QtCore import QTimer
 import logging
 
+from src.features.calendar.view import CalendarView
+from src.features.calendar.holidays import HolidayService
+from src.features.calendar.settings import SECTION as CALENDAR_SETTINGS
 from src.app.main_window import ApplicationWindow, PageDefinition
 from src.features.clock.settings import SECTION as CLOCK_SETTINGS
 from src.features.clock.view import ClockView
@@ -35,9 +38,11 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
     registry.register(CLOCK_SETTINGS)
     registry.register(weather_settings(providers.choices))
     registry.register(LOCATION_SETTINGS)
+    registry.register(CALENDAR_SETTINGS)
     configuration = Configuration(SettingsRepository(paths.config, registry))
     themes.bind(configuration)
     tasks = TaskRunner()
+    holidays = HolidayService(tasks, paths.cache, configuration)
     location = LocationService(configuration, tasks)
     clock = ClockViewModel(configuration, tasks)
     weather = WeatherViewModel(configuration, tasks, providers)
@@ -50,41 +55,25 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
         weather.stop()
         log_model.stop()
 
-    weather_before_location = {}
-
-    def snapshot_weather_location() -> None:
-        weather_before_location.clear()
-        values = configuration.get("weather")
-        weather_before_location.update({key: values[key] for key in ("location_name", "latitude", "longitude")})
-
     def apply_location(fix) -> None:
         values = configuration.get("location")
         clock.set_location_timezone(fix.timezone if fix and values["enabled"] and values["use_for_clock"] else "")
-        if fix and values["enabled"] and values["use_for_weather"]:
-            current = configuration.get("weather")
-            if any(current[key] != value for key, value in weather_before_location.items()):
-                LOGGER.info("定位期间用户已修改天气地点，保留手动选择")
-            else:
-                try:
-                    configuration.update("weather", location_name=fix.name, latitude=fix.latitude, longitude=fix.longitude)
-                    LOGGER.info("网络当前位置已同步到天气配置")
-                except (ValueError, OSError):
-                    LOGGER.exception("当前位置无法保存到天气配置，继续使用原配置")
-        if configuration.get("weather")["auto_refresh"]:
-            weather.refresh()
+        holidays.set_location(fix)
 
     location.updated.connect(apply_location)
-    location.started.connect(snapshot_weather_location)
 
     window = ApplicationWindow((
         PageDefinition("clock", "时钟", "◷", ClockView(clock)),
         PageDefinition("weather", "天气", "☀", WeatherView(weather)),
+        PageDefinition("calendar", "日历", "", CalendarView(themes, holidays)),
         PageDefinition("logs", "日志", "≡", LogsView(log_model, themes)),
-        PageDefinition("settings", "设置", "⚙", SettingsView(registry, configuration, storage)),
+        PageDefinition("settings", "设置", "⚙", SettingsView(registry, configuration, storage, location)),
     ), configuration, tasks, stop_producers)
     themes.bind_window(window)
     clock.alert.connect(window.notifications.report)
     weather.alert.connect(window.notifications.report)
-    LOGGER.info("应用装配完成：4 个页面，%d 个配置模块", len(registry.sections))
+    LOGGER.info("应用装配完成：5 个页面，%d 个配置模块", len(registry.sections))
     QTimer.singleShot(0, location.refresh)
+    if configuration.get("weather")["auto_refresh"]:
+        QTimer.singleShot(0, weather.refresh)
     return window

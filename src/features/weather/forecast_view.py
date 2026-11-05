@@ -1,11 +1,22 @@
 """天气趋势绘制：共用调色板的线条图标、小时曲线和每日温度区间。"""
 import math
 import re
+from datetime import date
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QPainter, QPainterPath, QPalette, QPen
 from PySide6.QtWidgets import QWidget
 
+
+
+def daily_title(value, current=False):
+    """使用预报地点的日历日期计算星期，不依赖电脑当前时区。"""
+    try:
+        day = date.fromisoformat(value)
+    except ValueError:
+        return value
+    weekday = "周" + "一二三四五六日"[day.weekday()]
+    return f"{'今天' if current else day.strftime('%m-%d')} {weekday}"
 
 
 def temperature(value):
@@ -142,9 +153,7 @@ class ForecastGraphic(QWidget):
                     painter.drawText(QRectF(detail_left + 4, y + 18, 148, 22), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, value)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(accent if index == self.current_index else muted)
-            title = row[0] if self.hourly else row[0][5:]
-            if index == self.current_index:
-                title = "当前小时" if self.hourly else "今天"
+            title = ("当前小时" if index == self.current_index else row[0]) if self.hourly else daily_title(row[0], index == self.current_index)
             painter.drawText(QRectF(x - 48, 8, 96, 22), align, title)
             weather_icon(painter, QRectF(x - 18, 38, 36, 36), row[1], accent)
             painter.setPen(text)

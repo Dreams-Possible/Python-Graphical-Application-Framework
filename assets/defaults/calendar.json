@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "values": {
+    "holiday_url": "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json",
+    "timeout_seconds": 10,
+    "international_url": "https://date.nager.at/api/v3/PublicHolidays/{year}/{country}"
+  }
+}

@@ -3,8 +3,14 @@
   "values": {
     "enabled": true,
     "use_for_clock": true,
-    "use_for_weather": true,
     "endpoint": "https://ipwho.is/",
-    "timeout_seconds": 8
+    "timeout_seconds": 8,
+    "mode": "network",
+    "manual_name": "上海 / 中国",
+    "manual_country": "CN",
+    "manual_latitude": 31.2304,
+    "manual_longitude": 121.4737,
+    "manual_timezone": "Asia/Shanghai",
+    "geocoding_url": "https://geocoding-api.open-meteo.com/v1/search"
   }
 }
