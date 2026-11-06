@@ -1,8 +1,10 @@
 """年、月、日共用日期状态；当前日期强调色，选中项仅描边。"""
 from PySide6.QtCore import QDate, QPointF, Qt, QSignalBlocker
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QHBoxLayout, QPushButton,
+from PySide6.QtWidgets import (QSizePolicy, QAbstractItemView, QBoxLayout, QButtonGroup, QHBoxLayout, QPushButton,
     QStackedWidget, QStyledItemDelegate, QStyle, QTableWidget, QTableWidgetItem, QHeaderView, QWidget, QVBoxLayout)
+from src.shared.gestures import KineticScrollArea, PeriodSwipePages, SwipeTableWidget
+from src.features.calendar.history_view import HistoryEventsView
 from src.shared.widgets import page_layout, plain_label, text_button
 
 
@@ -39,9 +41,10 @@ class DateDelegate(QStyledItemDelegate):
 
 
 class CalendarView(QWidget):
-    def __init__(self, themes, texts, holidays=None):
+    def __init__(self, themes, texts, holidays=None, history=None):
         super().__init__()
         self.texts = texts
+        self.history = history
         self.themes, self.holidays = themes, holidays
         self.date = self.today()
         self.mode = "month"
@@ -56,6 +59,7 @@ class CalendarView(QWidget):
         controls.addWidget(self.previous)
         controls.addWidget(self.following)
         controls.addWidget(self.title, 1)
+        actions = QHBoxLayout()
         self.group = QButtonGroup(self)
         self.modes = {}
         for key, label in (("year", "calendar.mode.year"), ("month", "calendar.mode.month"), ("day", "calendar.mode.day")):
@@ -64,33 +68,53 @@ class CalendarView(QWidget):
             button.clicked.connect(lambda checked=False, value=key: self.set_mode(value))
             self.group.addButton(button)
             self.modes[key] = button
-            controls.addWidget(button)
-        controls.addWidget(today)
+            actions.addWidget(button)
+        actions.addWidget(today)
+        self.today_button = today
         self.retry = text_button(texts, "calendar.refresh")
         self.retry.clicked.connect(self.reload_holidays)
         self.retry.setVisible(holidays is not None)
         self.retry.setObjectName("CalendarAction")
-        for index in range(controls.count()):
-            button = controls.itemAt(index).widget()
+        actions.addWidget(self.retry)
+        for item in [controls.itemAt(i) for i in range(controls.count())] + [actions.itemAt(i) for i in range(actions.count())]:
+            button = item.widget()
             if isinstance(button, QPushButton) and button is not today:
                 button.setObjectName("CalendarAction")
-        layout.addLayout(controls)
+        controls.setContentsMargins(0, 0, 0, 0)
+        actions.setContentsMargins(0, 0, 0, 0)
+        self._toolbar_left, self._toolbar_right = QWidget(), QWidget()
+        self._toolbar_left.setLayout(controls)
+        self._toolbar_right.setLayout(actions)
+        self._toolbar_right.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+        toolbar = QWidget()
+        self._toolbar_layout = QBoxLayout(QBoxLayout.Direction.LeftToRight, toolbar)
+        self._toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        self._toolbar_layout.addWidget(self._toolbar_left, 1)
+        self._toolbar_layout.addWidget(self._toolbar_right)
+        self._toolbar_layout.setAlignment(self._toolbar_right, Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(toolbar)
         self.stack = QStackedWidget()
-        self.year_grid = self.make_grid(3, 4)
-        self.month_grid = self.make_grid(6, 7)
-        self.month_grid.setHorizontalHeaderLabels([texts.weekday(day, short=True) for day in range(1, 8)])
-        self.month_grid.horizontalHeader().show()
-        self.stack.addWidget(self.year_grid)
-        self.stack.addWidget(self.month_grid)
-        day_page = QWidget()
-        day_layout = QVBoxLayout(day_page)
+        self.year_pages = self.make_period_pages("year", 3, 4)
+        self.month_pages = self.make_period_pages("month", 6, 7)
+        self.year_grid = self.year_pages.pages[1]
+        self.month_grid = self.month_pages.pages[1]
+        self.stack.addWidget(self.year_pages)
+        self.stack.addWidget(self.month_pages)
+        day_page = KineticScrollArea()
+        day_content = QWidget()
+        day_page.setWidget(day_content)
+        day_layout = QVBoxLayout(day_content)
+        day_layout.setContentsMargins(16, 16, 16, 16)
+        day_layout.setSpacing(16)
         self.day_title = plain_label(name="CalendarDay")
         self.day_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.day_info = plain_label(name="SectionTitle")
         self.day_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        day_layout.addStretch()
         day_layout.addWidget(self.day_title)
         day_layout.addWidget(self.day_info)
+        self.history_view = HistoryEventsView(texts, history)
+        self.history_view.refreshRequested.connect(lambda: self._load_history(force=True))
+        day_layout.addWidget(self.history_view)
         day_layout.addStretch()
         self.stack.addWidget(day_page)
         layout.addWidget(self.stack, 1)
@@ -99,15 +123,10 @@ class CalendarView(QWidget):
         layout.addWidget(self.selected)
         footer = QHBoxLayout()
         footer.addWidget(self.source_status, 1)
-        footer.addWidget(self.retry)
         layout.addLayout(footer)
         self.previous.clicked.connect(lambda: self.step(-1))
         self.following.clicked.connect(lambda: self.step(1))
         today.clicked.connect(self.go_today)
-        self.year_grid.currentCellChanged.connect(lambda row, col, *_: self.choose(self.year_grid, row, col))
-        self.month_grid.currentCellChanged.connect(lambda row, col, *_: self.choose(self.month_grid, row, col))
-        self.year_grid.cellDoubleClicked.connect(lambda *_: self.set_mode("month"))
-        self.month_grid.cellDoubleClicked.connect(lambda *_: self.set_mode("day"))
         themes.changed.connect(self.retranslate)
         texts.changed.connect(self.retranslate)
         if holidays:
@@ -115,7 +134,7 @@ class CalendarView(QWidget):
         self.refresh()
 
     def make_grid(self, rows, columns):
-        grid = QTableWidget(rows, columns)
+        grid = SwipeTableWidget(rows, columns)
         grid.setObjectName("CalendarGrid")
         grid.setShowGrid(False)
         grid.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -127,13 +146,41 @@ class CalendarView(QWidget):
         grid.verticalHeader().hide()
         return grid
 
+    def make_period_pages(self, mode, rows, columns):
+        grids = [self.make_grid(rows, columns) for _ in range(3)]
+        for grid in grids:
+            if mode == "month":
+                grid.horizontalHeader().show()
+            grid.currentCellChanged.connect(lambda row, column, *_, source=grid: self.choose(source, row, column))
+            grid.cellDoubleClicked.connect(lambda *_, target="month" if mode == "year" else "day": self.set_mode(target))
+        pages = PeriodSwipePages(grids)
+        pages.stepRequested.connect(self.step)
+        return pages
+
+    def _arrange_toolbar(self):
+        if not hasattr(self, "_toolbar_layout"):
+            return
+        available = self.width() - 2 * self.layout().contentsMargins().left()
+        required = self._toolbar_left.sizeHint().width() + self._toolbar_right.sizeHint().width() + self._toolbar_layout.spacing()
+        self._toolbar_layout.setDirection(QBoxLayout.Direction.TopToBottom if required > available else QBoxLayout.Direction.LeftToRight)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._arrange_toolbar()
+
     def set_mode(self, mode):
         self.mode = mode
         self.shown = self.date
         self.refresh()
 
     def step(self, direction):
-        self.shown = self.shown.addYears(direction) if self.mode == "year" else (self.shown.addMonths(direction) if self.mode == "month" else self.shown.addDays(direction))
+        self.year_pages.reset_period()
+        self.month_pages.reset_period()
+        candidate = self.shown.addYears(direction) if self.mode == "year" else (self.shown.addMonths(direction) if self.mode == "month" else self.shown.addDays(direction))
+        if not candidate.isValid() or not 1 <= candidate.year() <= 9999:
+            self.refresh()
+            return
+        self.shown = candidate
         if self.mode == "day":
             self.date = self.shown
         self.refresh()
@@ -157,7 +204,27 @@ class CalendarView(QWidget):
         if item is None:
             return
         self.date = item.data(Qt.ItemDataRole.UserRole)
+        self._sync_period_selection(grid)
         self.update_details()
+
+    def _sync_period_selection(self, source):
+        for pager, mode in ((self.year_pages, "year"), (self.month_pages, "month")):
+            for grid in pager.pages:
+                if grid is source:
+                    continue
+                blocker = QSignalBlocker(grid)
+                grid.clearSelection()
+                grid.setCurrentCell(-1, -1)
+                for row in range(grid.rowCount()):
+                    for column in range(grid.columnCount()):
+                        item = grid.item(row, column)
+                        if item is None:
+                            continue
+                        day = item.data(Qt.ItemDataRole.UserRole)
+                        selected = (day.year(), day.month()) == (self.date.year(), self.date.month()) if mode == "year" else day == self.date
+                        if selected:
+                            grid.setCurrentCell(row, column)
+                del blocker
 
     def update_details(self):
         weekday = self.texts.weekday(self.date.dayOfWeek())
@@ -169,9 +236,9 @@ class CalendarView(QWidget):
         self.day_info.setText(self.holiday_text(self.date))
 
     def retranslate(self):
-        self.refresh(load_holidays=False)
+        self.refresh(load_holidays=False, load_history=False)
 
-    def refresh(self, load_holidays=True):
+    def refresh(self, load_holidays=True, load_history=True):
         self.month_grid.setHorizontalHeaderLabels([self.texts.weekday(day, short=True) for day in range(1, 8)])
         today = self.today()
         self.modes[self.mode].setChecked(True)
@@ -187,17 +254,35 @@ class CalendarView(QWidget):
             if load_holidays:
                 self.holidays.ensure(self.shown.year())
             self.source_status.setText(self.texts.render(self.holidays.status(self.shown.year())))
-        grid = self.year_grid if self.mode == "year" else self.month_grid
+        for pager in (self.year_pages, self.month_pages):
+            pager.reset_period()
+        if self.mode in ("year", "month"):
+            pager = self.year_pages if self.mode == "year" else self.month_pages
+            for offset, grid in zip((-1, 0, 1), pager.pages):
+                shown = self.shown.addYears(offset) if self.mode == "year" else self.shown.addMonths(offset)
+                if not shown.isValid() or not 1 <= shown.year() <= 9999:
+                    shown = self.shown
+                self.populate_period(grid, shown, self.mode)
+        self.update_details()
+        self.history_view.set_day(self.date)
+        self._arrange_toolbar()
+        if load_history:
+            self._load_history()
+
+    def populate_period(self, grid, shown, mode):
+        today = self.today()
+        if mode == "month":
+            grid.setHorizontalHeaderLabels([self.texts.weekday(day, short=True) for day in range(1, 8)])
         blocker = QSignalBlocker(grid)
         grid.clearSelection()
         grid.setCurrentCell(-1, -1)
-        first = QDate(self.shown.year(), self.shown.month(), 1)
+        first = QDate(shown.year(), shown.month(), 1)
         start = first.addDays(1 - first.dayOfWeek())
         for i in range(grid.rowCount() * grid.columnCount()):
-            day = QDate(self.shown.year(), i + 1, 1) if self.mode == "year" else start.addDays(i)
-            text = self.texts.locale.standaloneMonthName(day.month()) if self.mode == "year" else self.texts.number(day.day())
+            day = QDate(shown.year(), i + 1, 1) if mode == "year" else start.addDays(i)
+            text = self.texts.locale.standaloneMonthName(day.month()) if mode == "year" else self.texts.number(day.day())
             events = []
-            if self.mode == "year" and self.holidays:
+            if mode == "year" and self.holidays:
                 names = []
                 for n in range(1, day.daysInMonth() + 1):
                     event = self.holidays.event(QDate(day.year(), day.month(), n))
@@ -205,23 +290,35 @@ class CalendarView(QWidget):
                     if name and name not in names:
                         names.append(name)
                 events = names
-            if self.mode != "year" and self.holidays:
+            if mode != "year" and self.holidays:
                 event = self.holidays.label(day)
                 if event:
                     events.append(self.texts.render(event))
             item = QTableWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole + 3, bool(events))
             item.setData(Qt.ItemDataRole.UserRole, day)
-            item.setData(Qt.ItemDataRole.UserRole + 1, (day.year(), day.month()) == (today.year(), today.month()) if self.mode == "year" else day == today)
-            item.setData(Qt.ItemDataRole.UserRole + 2, self.mode != "year" and day.month() != self.shown.month())
-            item.setToolTip(day.toString("yyyy-MM" if self.mode == "year" else "yyyy-MM-dd") + "\n" + (" / ".join(events) if events else self.holiday_text(day)))
+            item.setData(Qt.ItemDataRole.UserRole + 1, (day.year(), day.month()) == (today.year(), today.month()) if mode == "year" else day == today)
+            item.setData(Qt.ItemDataRole.UserRole + 2, mode != "year" and day.month() != shown.month())
+            item.setToolTip(day.toString("yyyy-MM" if mode == "year" else "yyyy-MM-dd") + "\n" + (" / ".join(events) if events else self.holiday_text(day)))
             row, column = divmod(i, grid.columnCount())
             grid.setItem(row, column, item)
-            selected = (day.year(), day.month()) == (self.date.year(), self.date.month()) if self.mode == "year" else day == self.date
+            selected = (day.year(), day.month()) == (self.date.year(), self.date.month()) if mode == "year" else day == self.date
             if selected:
                 grid.setCurrentCell(row, column)
-        self.update_details()
         grid.viewport().update()
+
+    def _load_history(self, force=False):
+        if self.history is None:
+            return
+        if self.mode == "day" and self.isVisible():
+            self.history.load(self.date.toPython(), force=force)
+        else:
+            self.history.suspend()
+
+    def hideEvent(self, event):
+        if self.history:
+            self.history.suspend()
+        super().hideEvent(event)
 
     def showEvent(self, event):
         super().showEvent(event)

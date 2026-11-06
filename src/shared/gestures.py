@@ -5,9 +5,36 @@ from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QPropertyAnimation,
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import (QApplication, QAbstractButton, QAbstractItemView, QAbstractSlider,
     QAbstractSpinBox, QComboBox, QLabel, QLineEdit, QPlainTextEdit, QScrollArea, QScroller,
-    QScrollerProperties, QTextEdit, QWidget)
+    QScrollerProperties, QTableWidget, QTextEdit, QWidget)
 from shiboken6 import isValid
 from src.shared.ui_metrics import UI
+
+
+class _ClickCapture:
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.global_origin = None
+        self.local_origin = None
+        self.dragged = False
+
+    def press(self, event):
+        self.global_origin = event.globalPosition()
+        self.local_origin = event.position()
+        self.dragged = False
+
+    def move(self, event):
+        if self.global_origin is not None and (event.globalPosition() - self.global_origin).manhattanLength() >= QApplication.startDragDistance():
+            self.dragged = True
+
+    def release(self, event, rect):
+        valid = (self.global_origin is not None and not self.dragged
+                 and rect.contains(event.position().toPoint())
+                 and (event.globalPosition() - self.global_origin).manhattanLength() < QApplication.startDragDistance())
+        origin = self.local_origin if valid else None
+        self.reset()
+        return origin
 
 
 class DragClickWidget(QWidget):
@@ -16,41 +43,75 @@ class DragClickWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.cancel_click()
+        self._click = _ClickCapture()
 
     def cancel_click(self):
-        self._press_global = None
-        self._press_local = None
-        self._was_dragged = False
+        self._click.reset()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._press_global = event.globalPosition()
-            self._press_local = event.position()
-            self._was_dragged = False
+            self._click.press(event)
             event.accept()
         else:
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._press_global is not None and (event.globalPosition() - self._press_global).manhattanLength() >= QApplication.startDragDistance():
-            self._was_dragged = True
+        self._click.move(event)
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() != Qt.MouseButton.LeftButton:
             return super().mouseReleaseEvent(event)
-        click = (self._press_global is not None and not self._was_dragged
-                 and self.rect().contains(event.position().toPoint())
-                 and (event.globalPosition() - self._press_global).manhattanLength() < QApplication.startDragDistance())
-        origin = self._press_local
-        self.cancel_click()
-        if click:
+        origin = self._click.release(event, self.rect())
+        if origin is not None:
             self.clickReleased.emit(origin, event.position())
         event.accept()
 
     def hideEvent(self, event):
         self.cancel_click()
+        super().hideEvent(event)
+
+
+class SwipeTableWidget(QTableWidget):
+    """显式允许翻页手势的表格；普通表格仍保留原生拖选。"""
+    def __init__(self, rows, columns, parent=None):
+        super().__init__(rows, columns, parent)
+        self._click = _ClickCapture()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._click.press(event)
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self._click.move(event)
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() != Qt.MouseButton.LeftButton:
+            return super().mouseReleaseEvent(event)
+        origin = self._click.release(event, self.viewport().rect())
+        if origin is not None:
+            press = QMouseEvent(QEvent.Type.MouseButtonPress, origin, event.globalPosition(),
+                                Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, event.modifiers())
+            super().mousePressEvent(press)
+            super().mouseReleaseEvent(event)
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event):
+        self._click.reset()
+        press = QMouseEvent(QEvent.Type.MouseButtonPress, event.position(), event.globalPosition(),
+                            event.button(), event.buttons(), event.modifiers())
+        super().mousePressEvent(press)
+        super().mouseDoubleClickEvent(event)
+
+    def hideEvent(self, event):
+        self._click.reset()
         super().hideEvent(event)
 
 
@@ -192,6 +253,38 @@ class SwipePages(QWidget):
         super().hideEvent(event)
 
 
+class PeriodSwipePages(SwipePages):
+    """三个可复用的相邻周期视图；完成切页后回到中间槽，周期含义交给调用者。"""
+    stepRequested = Signal(int)
+
+    def __init__(self, pages, parent=None):
+        self._period_ready = False
+        if len(pages) != 3:
+            raise ValueError("PeriodSwipePages requires previous, current and next pages")
+        super().__init__(pages, parent)
+        self.current = 1
+        self._period_ready = True
+
+    def reset_period(self):
+        self._gestures.cancel(settle=False)
+        self.animation.stop()
+        self.current = 1
+        self.strip.move(-self.viewport.width(), 0)
+        super()._settled()
+
+    def _settled(self):
+        if not getattr(self, "_period_ready", False) or self.current == 1:
+            return super()._settled()
+        direction = self.current - 1
+        self.setUpdatesEnabled(False)
+        try:
+            self.reset_period()
+            self.stepRequested.emit(direction)
+        finally:
+            self.setUpdatesEnabled(True)
+
+
+
 class _PointerRouter(QObject):
     """每个容器拥有路由器；按祖先链只让实际手势根处理一次事件。"""
     def __init__(self, owner):
@@ -222,6 +315,8 @@ class _PointerRouter(QObject):
     @staticmethod
     def _excluded(chain, owner):
         for widget in chain:
+            if isinstance(widget, SwipeTableWidget):
+                continue
             if isinstance(widget, (QAbstractButton, QAbstractItemView, QAbstractSlider, QAbstractSpinBox,
                                    QComboBox, QLineEdit, QTextEdit, QPlainTextEdit)):
                 return True

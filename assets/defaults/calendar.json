@@ -1,8 +1,12 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "values": {
     "holiday_url": "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/{year}.json",
     "timeout_seconds": 10,
-    "international_url": "https://date.nager.at/api/v3/PublicHolidays/{year}/{country}"
+    "international_url": "https://date.nager.at/api/v3/PublicHolidays/{year}/{country}",
+    "history_enabled": true,
+    "history_url": "https://{language}.wikipedia.org/api/rest_v1/feed/onthisday/selected/{month}/{day}",
+    "history_language": "zh",
+    "history_limit": 5
   }
 }

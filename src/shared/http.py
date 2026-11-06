@@ -14,7 +14,7 @@ from src.shared.tasks import check_cancelled
 LOGGER = logging.getLogger("workbench.http")
 
 
-def get_json(endpoint: str, parameters: dict, timeout: int, cancelled: Event, *, allow_list: bool = False) -> dict | list:
+def get_json(endpoint: str, parameters: dict, timeout: int, cancelled: Event, *, allow_list: bool = False, user_agent: str | None = None) -> dict | list:
     parsed = urlsplit(endpoint)
     LOGGER.debug("准备 JSON 请求，参数数量 %d（不记录参数值）", len(parameters))
     if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
@@ -22,7 +22,7 @@ def get_json(endpoint: str, parameters: dict, timeout: int, cancelled: Event, *,
     separator = "&" if parsed.query else "?"
     url = endpoint + separator + urlencode(parameters)
     check_cancelled(cancelled)
-    request = Request(url, headers={"User-Agent": "GraphicalWorkbench/0.1", "Accept": "application/json"})
+    request = Request(url, headers={"User-Agent": user_agent or "GraphicalWorkbench/0.1", "Accept": "application/json"})
     chunks = []
     count = 0
     deadline = monotonic() + timeout * 2

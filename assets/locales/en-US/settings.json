@@ -103,5 +103,12 @@
   "settings.open.done": "Requested the configuration folder for {file_key}.json. Restart the app after editing files manually.",
   "settings.open.failed": "Cannot open the folder. Copy the path above to access {file_key}.json manually.",
   "settings.save.failed": "Save failed: {detail}",
-  "settings.save.done": "Settings saved."
+  "settings.save.done": "Settings saved.",
+  "settings.calendar.history_enabled.label": "Show selected anniversaries in day view",
+  "settings.calendar.history_language.label": "History content language",
+  "settings.calendar.history_language.zh": "Chinese Wikipedia",
+  "settings.calendar.history_language.en": "English Wikipedia",
+  "settings.calendar.history_limit.label": "Maximum selected anniversaries to show",
+  "settings.calendar.history_url.label": "History endpoint",
+  "settings.calendar.history_url.hint": "Wikifeeds-compatible URL with {{language}}, {{month}} and {{day}}. Content language is independent of software language; no key is needed."
 }

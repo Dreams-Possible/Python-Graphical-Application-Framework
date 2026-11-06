@@ -5,6 +5,7 @@ import logging
 
 from src.features.calendar.view import CalendarView
 from src.features.calendar.holidays import HolidayService
+from src.features.calendar.history import HistoryRepository, HistoryService
 from src.features.calendar.settings import SECTION as CALENDAR_SETTINGS
 from src.app.main_window import ApplicationWindow, PageDefinition
 from src.features.clock.settings import SECTION as CLOCK_SETTINGS
@@ -39,13 +40,14 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
     register_application(registry)
     registry.register(CLOCK_SETTINGS)
     registry.register(weather_settings(providers.choices))
-    registry.register(LOCATION_SETTINGS)
     registry.register(CALENDAR_SETTINGS)
+    registry.register(LOCATION_SETTINGS)
     configuration = Configuration(SettingsRepository(paths.config, registry))
     themes.bind(configuration)
     texts.bind(configuration)
     tasks = TaskRunner()
     holidays = HolidayService(tasks, paths.cache, configuration)
+    history = HistoryService(tasks, configuration, HistoryRepository(paths.cache))
     location = LocationService(configuration, tasks)
     clock = ClockViewModel(configuration, tasks)
     weather = WeatherViewModel(configuration, tasks, providers)
@@ -53,6 +55,7 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
     storage = StorageViewModel(StorageRepository(paths, logs.path), tasks)
 
     def stop_producers() -> None:
+        history.stop()
         location.stop()
         clock.stop()
         weather.stop()
@@ -68,7 +71,7 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
     window = ApplicationWindow((
         PageDefinition("clock", "app.navigation.clock", "◷", ClockView(clock, texts)),
         PageDefinition("weather", "app.navigation.weather", "☀", WeatherView(weather, texts)),
-        PageDefinition("calendar", "app.navigation.calendar", "", CalendarView(themes, texts, holidays)),
+        PageDefinition("calendar", "app.navigation.calendar", "", CalendarView(themes, texts, holidays, history)),
         PageDefinition("logs", "app.navigation.logs", "≡", LogsView(log_model, themes, texts)),
         PageDefinition("settings", "app.navigation.settings", "⚙", SettingsView(registry, configuration, storage, texts, location)),
     ), configuration, tasks, stop_producers, texts)

@@ -52,6 +52,7 @@ QLabel#BrandCaption { font-size: 10px; color: $muted; font-family: 'Segoe UI', s
 QLabel#BrandMark { background: $selected; border-radius: 12px; }
 QFrame#Divider { background: $border; border: 0; }
 QPushButton#CalendarAction { padding: 6px 8px; }
+QLabel#HistoryYear { color: $accent; font-size: 18px; font-weight: 600; }
 QLabel#CalendarDay { font-size: 24px; border: 2px solid $accent; border-radius: 10px; padding: 20px; }
 QLabel#CalendarDay[current="true"], QLabel#SectionTitle[current="true"] { color: $accent; }
 QTableWidget#CalendarGrid { background: $surface; border: 0; outline: 0; }
