@@ -23,6 +23,24 @@ def get_json(endpoint: str, parameters: dict, timeout: int, cancelled: Event, *,
     url = endpoint + separator + urlencode(parameters)
     check_cancelled(cancelled)
     request = Request(url, headers={"User-Agent": user_agent or "GraphicalWorkbench/0.1", "Accept": "application/json"})
+    return _read_json(request, timeout, cancelled, allow_list)
+
+
+def post_json(endpoint: str, parameters: dict, timeout: int, cancelled: Event, *, headers=None, form=False) -> dict:
+    parsed = urlsplit(endpoint)
+    if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+        raise ui_error(ValueError, "errors.http_url")
+    check_cancelled(cancelled)
+    content_type = "application/x-www-form-urlencoded; charset=utf-8" if form else "application/json; charset=utf-8"
+    payload = urlencode(parameters).encode("utf-8") if form else json.dumps(parameters, ensure_ascii=False).encode("utf-8")
+    request_headers = {"User-Agent": "GraphicalWorkbench/0.1", "Accept": "application/json", "Content-Type": content_type}
+    request_headers.update(headers or {})
+    request = Request(endpoint, data=payload, headers=request_headers, method="POST")
+    return _read_json(request, timeout, cancelled, False)
+
+
+def _read_json(request, timeout, cancelled, allow_list):
+    parsed = urlsplit(request.full_url)
     chunks = []
     count = 0
     deadline = monotonic() + timeout * 2

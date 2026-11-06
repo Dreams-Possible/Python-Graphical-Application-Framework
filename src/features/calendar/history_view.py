@@ -79,6 +79,10 @@ class HistoryEventsView(QWidget):
             content = QVBoxLayout()
             content.setSpacing(8)
             content.addWidget(plain_label(event.text))
+            if event.original_text:
+                note = text_label(self.texts, "calendar.history.translated" if event.text != event.original_text else "calendar.history.translation_failed", "Muted")
+                note.setToolTip(event.original_text)
+                content.addWidget(note)
             if event.article:
                 link = text_button(self.texts, "calendar.history.read_source")
                 link.clicked.connect(lambda checked=False, url=event.article: self.open_article(url))

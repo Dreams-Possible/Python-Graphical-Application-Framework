@@ -106,9 +106,9 @@
   "settings.save.done": "Settings saved.",
   "settings.calendar.history_enabled.label": "Show selected anniversaries in day view",
   "settings.calendar.history_language.label": "History content language",
-  "settings.calendar.history_language.zh": "Chinese Wikipedia",
+  "settings.calendar.history_language.zh": "English Wikipedia · Simplified Chinese translation",
   "settings.calendar.history_language.en": "English Wikipedia",
   "settings.calendar.history_limit.label": "Maximum selected anniversaries to show",
   "settings.calendar.history_url.label": "History endpoint",
-  "settings.calendar.history_url.hint": "Wikifeeds-compatible URL with {{language}}, {{month}} and {{day}}. Content language is independent of software language; no key is needed."
+  "settings.calendar.history_url.hint": "English Wikifeeds-compatible URL with {{language}}, {{month}} and {{day}}. Chinese UI uses MyMemory translation (5000 anonymous characters/day); otherwise English originals are shown."
 }

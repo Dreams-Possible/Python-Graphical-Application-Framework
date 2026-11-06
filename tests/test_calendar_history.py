@@ -19,7 +19,7 @@ class Configuration(QObject):
     changed = Signal(str)
     def __init__(self):
         super().__init__()
-        self.values = dict(history_enabled=True, history_language="zh", history_limit=20,
+        self.values = dict(history_enabled=True, history_language="zh", history_limit=5,
             history_url="https://{language}.wikipedia.org/api/rest_v1/feed/onthisday/events/{month}/{day}", timeout_seconds=10)
     def get(self, key):
         return self.values.copy()
@@ -60,7 +60,8 @@ class HistoryTests(unittest.TestCase):
         self.now = 1000000
         self.repository = HistoryRepository(Path(self.directory.name), now=lambda: self.now)
         self.tasks, self.configuration = Tasks(), Configuration()
-        self.service = HistoryService(self.tasks, self.configuration, self.repository)
+        self.texts = Localization(mode="en-US")
+        self.service = HistoryService(self.tasks, self.configuration, self.repository, self.texts)
 
     def snapshot(self, query):
         return HistorySnapshot(query, self.now, (HistoryEvent(2024, "Event text", "https://en.wikipedia.org/wiki/Example"),))
@@ -120,16 +121,16 @@ class HistoryTests(unittest.TestCase):
         view.close()
 
     def test_fresh_cache_is_keyed_by_month_day_language_and_source(self):
-        query = HistoryQuery(11, 5, "zh", self.configuration.values["history_url"], 10)
+        query = HistoryQuery(11, 5, "en", self.configuration.values["history_url"], 10)
         self.repository.save(self.snapshot(query))
         self.service.load(date(2026, 11, 5))
         self.assertFalse(self.tasks.jobs)
         self.assertEqual(len(self.service.state.events), 1)
         self.service.load(date(1900, 11, 5))
         self.assertFalse(self.tasks.jobs)
-        other = HistoryQuery(11, 5, "en", query.template, 10)
+        other = HistoryQuery(11, 5, "zh", query.template, 10)
         self.assertIsNone(self.repository.read(other))
-        other = HistoryQuery(11, 5, "zh", "https://example.test/{month}/{day}", 10)
+        other = HistoryQuery(11, 5, "en", "https://example.test/{month}/{day}", 10)
         self.assertIsNone(self.repository.read(other))
 
     def test_fast_date_switch_only_displays_latest_request(self):
@@ -146,7 +147,7 @@ class HistoryTests(unittest.TestCase):
         self.assertFalse(self.service.state.busy)
 
     def test_switch_to_cached_day_ignores_error_from_previous_request(self):
-        query = HistoryQuery(11, 6, "zh", self.configuration.values["history_url"], 10)
+        query = HistoryQuery(11, 6, "en", self.configuration.values["history_url"], 10)
         self.repository.save(self.snapshot(query))
         self.service.load(date(2026, 11, 5))
         self.service.load(date(2026, 11, 6))
@@ -155,7 +156,7 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(self.service.state.status.key, "calendar.history.cached")
 
     def test_expired_cache_survives_failed_refresh_and_suspend_blocks_result(self):
-        query = HistoryQuery(11, 5, "zh", self.configuration.values["history_url"], 10)
+        query = HistoryQuery(11, 5, "en", self.configuration.values["history_url"], 10)
         self.repository.save(self.snapshot(query))
         self.now += 2 * 86400
         self.service.load(date(2026, 11, 5))
@@ -172,8 +173,8 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(self.service.state.events, ())
         self.assertNotIn(result.query.key, self.service._memo)
 
-    def test_opening_day_view_loads_but_month_year_and_language_changes_do_not(self):
-        texts = Localization(mode="zh-CN")
+    def test_day_view_follows_software_language_and_source_is_always_english(self):
+        texts = self.texts
         themes = ThemeManager(self.app)
         view = CalendarView(themes, texts, history=self.service)
         view.resize(900, 700)
@@ -184,8 +185,11 @@ class HistoryTests(unittest.TestCase):
         self.assertTrue(self.tasks.jobs)
         self.tasks.finish(self.snapshot(self.service._current))
         sequence = self.tasks.sequence
-        texts.set_language("en-US")
-        self.assertEqual(self.tasks.sequence, sequence)
+        texts.set_language("zh-CN")
+        self.assertEqual(self.tasks.sequence, sequence + 1)
+        self.assertEqual(self.service._current.language, "en")
+        self.assertEqual(self.service._current.target_language, "zh")
+        self.tasks.finish(self.snapshot(self.service._current))
         self.assertIn("Event text", [label.text() for label in view.history_view.findChildren(QLabel)])
         view.set_mode("year")
         self.assertFalse(self.tasks.jobs)
@@ -197,3 +201,31 @@ class HistoryTests(unittest.TestCase):
             self.repository.fetch(query, Event())
         self.assertTrue(request.call_args.args[0].endswith("/02/09"))
         self.assertIn("Daylight/", request.call_args.kwargs["user_agent"])
+
+    def test_day_preview_does_not_request_until_date_is_committed(self):
+        from PySide6.QtTest import QTest
+        from src.shared.ui_metrics import UI
+        texts = Localization(mode="zh-CN")
+        view = CalendarView(ThemeManager(self.app), texts, history=self.service)
+        view.date = view.shown = QDate(2026, 11, 5)
+        view.resize(900, 700)
+        view.show()
+        view.set_mode("day")
+        self.app.processEvents()
+        self.tasks.finish(self.snapshot(self.service._current))
+        sequence = self.tasks.sequence
+        QTest.qWait(100)
+        try:
+            view.day_pages.begin_swipe()
+            view.day_pages.move_swipe(-100)
+            self.assertEqual(self.tasks.sequence, sequence)
+            self.assertEqual(view.date, QDate(2026, 11, 5))
+            self.assertIsNone(view.day_pages.pages[0].history_view)
+            self.assertIsNone(view.day_pages.pages[2].history_view)
+            view.day_pages.end_swipe(-240, 0)
+            QTest.qWait(UI.page_slide_ms + 30)
+            self.assertEqual(view.date, QDate(2026, 11, 6))
+            self.assertEqual(self.tasks.sequence, sequence + 1)
+            self.assertEqual(self.service._current.day, 6)
+        finally:
+            view.close()

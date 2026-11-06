@@ -52,5 +52,9 @@
   "calendar.history.footer": "{status} · {language} · Featured: {count}",
   "calendar.history.footer_hint": "{scope}\nShowing {shown} / {total}\n{source}",
   "calendar.history.anniversary": "{years}-year anniversary",
-  "calendar.history.same_year": "That year"
+  "calendar.history.same_year": "That year",
+  "calendar.day_preview": "Release to view selected anniversaries for this day.",
+  "calendar.history.translated": "Machine translation · Hover for the English original",
+  "calendar.history.translation_failed": "Translation unavailable; showing the English original",
+  "calendar.history.translation_partial": "Some translations are unavailable; English originals are retained."
 }

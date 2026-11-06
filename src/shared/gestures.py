@@ -1,8 +1,8 @@
 """公共鼠标手势基类：点击、惯性滚动与跟手切页，单次手势只交给一个目标。"""
 from time import monotonic
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QPropertyAnimation, QEasingCurve, Qt, Signal
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRectF, QPropertyAnimation, QEasingCurve, Qt, Signal
+from PySide6.QtGui import QMouseEvent, QPainter, QPainterPath, QPalette, QPen
 from PySide6.QtWidgets import (QApplication, QAbstractButton, QAbstractItemView, QAbstractSlider,
     QAbstractSpinBox, QComboBox, QLabel, QLineEdit, QPlainTextEdit, QScrollArea, QScroller,
     QScrollerProperties, QTableWidget, QTextEdit, QWidget)
@@ -161,6 +161,30 @@ class KineticScrollArea(QScrollArea):
         super().hideEvent(event)
 
 
+class _PeriodBoundary(QWidget):
+    """仅在周期过渡期间显示，覆盖边缘形成留白与主题强调边框。"""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.hide()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect())
+        inset = UI.period_frame_inset
+        inner = rect.adjusted(inset, inset, -inset, -inset)
+        outer_path, inner_path = QPainterPath(), QPainterPath()
+        outer_path.addRect(rect)
+        inner_path.addRoundedRect(inner, UI.period_frame_radius, UI.period_frame_radius)
+        painter.fillPath(outer_path.subtracted(inner_path), self.palette().color(QPalette.ColorRole.Window))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(self.palette().color(QPalette.ColorRole.Accent), UI.period_frame_width))
+        painter.drawRoundedRect(inner, UI.period_frame_radius, UI.period_frame_radius)
+        painter.end()
+
+
 class SwipePages(QWidget):
     """跟手平移、距离／速度判定及回弹；导航外观由子类提供。"""
     currentChanged = Signal(int)
@@ -170,6 +194,8 @@ class SwipePages(QWidget):
         if not pages:
             raise ValueError("SwipePages requires at least one page")
         self.pages = list(pages)
+        self._boundary_frames = []
+        self._persistent_boundaries = False
         self.current = 0
         self.viewport = QWidget(self)
         self.viewport.installEventFilter(self)
@@ -193,6 +219,7 @@ class SwipePages(QWidget):
         self.current = index
         for page in self.pages:
             page.show()
+        self._show_boundaries(self.strip.x() != -index * self.viewport.width())
         self.animation.setStartValue(self.strip.pos())
         self.animation.setEndValue(QPoint(-index * self.viewport.width(), 0))
         if previous != index:
@@ -206,6 +233,21 @@ class SwipePages(QWidget):
         self._drag_start_x = self.strip.x()
         for page in self.pages:
             page.show()
+        self._show_boundaries(True)
+
+    def enable_period_boundaries(self):
+        self._persistent_boundaries = True
+        if not self._boundary_frames:
+            self._boundary_frames = [_PeriodBoundary(self.strip) for page in self.pages]
+        self._resize_pages()
+
+    def _show_boundaries(self, visible):
+        visible = visible or self._persistent_boundaries
+        for index, frame in enumerate(self._boundary_frames):
+            frame.setGeometry(index * self.viewport.width(), 0, self.viewport.width(), self.viewport.height())
+            frame.setVisible(visible)
+            if visible:
+                frame.raise_()
 
     def move_swipe(self, distance):
         distance = max(-self.viewport.width(), min(self.viewport.width(), distance))
@@ -220,6 +262,7 @@ class SwipePages(QWidget):
         self._animate_to(max(0, min(len(self.pages) - 1, target)))
 
     def _settled(self):
+        self._show_boundaries(False)
         for index, page in enumerate(self.pages):
             page.setVisible(index == self.current)
 
@@ -241,11 +284,13 @@ class SwipePages(QWidget):
         width, height = self.viewport.width(), self.viewport.height()
         self.strip.resize(width * len(self.pages), height)
         for index, page in enumerate(self.pages):
-            page.setGeometry(index * width, 0, width, height)
+            inset = UI.period_frame_inset + UI.period_frame_width if self._persistent_boundaries else 0
+            page.setGeometry(index * width + inset, inset, max(0, width - 2 * inset), max(0, height - 2 * inset))
         self.strip.move(-self.current * width, 0)
         self._settled()
 
     def hideEvent(self, event):
+        self._show_boundaries(False)
         if hasattr(self, "_gestures"):
             self._gestures.cancel(settle=False)
             self.animation.stop()
@@ -264,6 +309,7 @@ class PeriodSwipePages(SwipePages):
         super().__init__(pages, parent)
         self.current = 1
         self._period_ready = True
+        self.enable_period_boundaries()
 
     def reset_period(self):
         self._gestures.cancel(settle=False)

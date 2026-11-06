@@ -56,10 +56,8 @@ def resolve_language(mode: str, system_languages: list[str]) -> str:
         return mode
     if mode != "system":
         raise ValueError(f"Unsupported software language: {mode}")
-    for language in system_languages:
-        prefix = language.replace("_", "-").lower().split("-")[0]
-        if prefix in ("zh", "en"):
-            return "zh-CN" if prefix == "zh" else "en-US"
+    if system_languages and system_languages[0].replace("_", "-").lower().split("-")[0] == "zh":
+        return "zh-CN"
     return "en-US"
 
 

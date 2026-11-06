@@ -74,6 +74,7 @@ class CalendarTests(unittest.TestCase):
             QTest.qWaitForWindowActive(view, 1000)
         view.refresh()
         self.app.processEvents()
+        QTest.qWait(100)
         try:
             self.drag_grid(view.month_grid, -240)
             self.assertEqual((view.shown.year(), view.shown.month()), (2027, 1))
@@ -122,3 +123,39 @@ class CalendarTests(unittest.TestCase):
         self.assertEqual(view._toolbar_layout.direction(), QBoxLayout.Direction.TopToBottom)
         self.assertGreater(view.retry.x(), view.today_button.x())
         view.close()
+
+    def test_day_swipe_changes_date_across_year_and_boundaries_persist(self):
+        view = CalendarView(ThemeManager(self.app), Localization(mode="zh-CN"))
+        view.resize(900, 700)
+        view.move(40, 40)
+        view.date = view.shown = QDate(2026, 12, 31)
+        view.set_mode("day")
+        view.show()
+        if self.app.platformName() == "windows":
+            view.activateWindow()
+            QTest.qWaitForWindowActive(view, 1000)
+        self.app.processEvents()
+        try:
+            pager = view.day_pages
+            pager.begin_swipe()
+            pager.move_swipe(-80)
+            self.assertTrue(all(frame.isVisible() for frame in pager._boundary_frames))
+            self.assertTrue(all(frame.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents) for frame in pager._boundary_frames))
+            self.assertEqual(view.date, QDate(2026, 12, 31))
+            pager.end_swipe(-240, 0)
+            QTest.qWait(UI.page_slide_ms + 30)
+            self.assertEqual(view.date, QDate(2027, 1, 1))
+            self.assertEqual(pager.current, 1)
+            self.assertTrue(pager._boundary_frames[1].isVisible())
+            self.drag_grid(pager.pages[1], 240)
+            self.assertEqual(view.date, QDate(2026, 12, 31))
+            for mode, area in (("year", view.year_pages), ("month", view.month_pages)):
+                view.set_mode(mode)
+                area.begin_swipe()
+                self.assertTrue(all(frame.isVisible() for frame in area._boundary_frames))
+                area.reset_period()
+                self.assertTrue(area._boundary_frames[1].isVisible())
+        finally:
+            view.close()
+            view.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

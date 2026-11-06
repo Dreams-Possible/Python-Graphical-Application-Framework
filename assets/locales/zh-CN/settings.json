@@ -106,9 +106,9 @@
   "settings.save.done": "配置已保存。",
   "settings.calendar.history_enabled.label": "在日视图显示精选周年",
   "settings.calendar.history_language.label": "历史事件内容语言",
-  "settings.calendar.history_language.zh": "中文维基百科",
+  "settings.calendar.history_language.zh": "英文维基百科 · 简体中文机器译文",
   "settings.calendar.history_language.en": "英文维基百科",
   "settings.calendar.history_limit.label": "精选周年最多显示条数",
   "settings.calendar.history_url.label": "历史事件接口地址",
-  "settings.calendar.history_url.hint": "WikiFeed 兼容地址，包含 {{language}}、{{month}}、{{day}}。内容语言独立于软件语言；无需密钥。"
+  "settings.calendar.history_url.hint": "英文 WikiFeed 兼容地址，包含 {{language}}、{{month}}、{{day}}。中文界面使用 MyMemory 机器翻译（匿名每天 5000 字符）；其余显示英文原文。"
 }

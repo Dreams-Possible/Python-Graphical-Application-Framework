@@ -87,7 +87,9 @@ class SettingsRepository:
             raise ui_error(ValueError, "errors.settings_object")
         for field in self.registry.section(key).fields:
             value = values.get(field.key)
-            if field.kind == "bool":
+            if field.kind in ("secret", "optional_text"):
+                valid = isinstance(value, str) and len(value) <= 2048
+            elif field.kind == "bool":
                 valid = type(value) is bool
             elif field.kind in ("int", "float"):
                 valid = type(value) in ((int,) if field.kind == "int" else (int, float))

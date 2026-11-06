@@ -40,6 +40,48 @@ class DateDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+class CalendarDayPage(KineticScrollArea):
+    """日期面板只负责内容；滑动由公共周期容器处理，预览不发起请求。"""
+    def __init__(self, texts, history=None, preview=False):
+        super().__init__()
+        self.texts = texts
+        self.day = None
+        content = QWidget()
+        self.setWidget(content)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(16)
+        self.title = plain_label(name="CalendarDay")
+        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.info = plain_label(name="SectionTitle")
+        self.info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.title)
+        layout.addWidget(self.info)
+        self.history_view = None
+        if preview:
+            hint = plain_label(name="Muted")
+            hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            texts.bind_text(hint, "calendar.day_preview")
+            layout.addWidget(hint)
+        else:
+            self.history_view = HistoryEventsView(texts, history)
+            layout.addWidget(self.history_view)
+        layout.addStretch()
+
+    def set_day(self, day, today, holiday):
+        changed = self.day != day
+        self.day = QDate(day)
+        self.title.setText(self.texts.date(day, long=True))
+        self.title.setProperty("current", day == today)
+        self.title.style().unpolish(self.title)
+        self.title.style().polish(self.title)
+        self.info.setText(holiday)
+        if self.history_view:
+            self.history_view.set_day(day)
+        if changed:
+            self.verticalScrollBar().setValue(0)
+
+
 class CalendarView(QWidget):
     def __init__(self, themes, texts, holidays=None, history=None):
         super().__init__()
@@ -100,23 +142,14 @@ class CalendarView(QWidget):
         self.month_grid = self.month_pages.pages[1]
         self.stack.addWidget(self.year_pages)
         self.stack.addWidget(self.month_pages)
-        day_page = KineticScrollArea()
-        day_content = QWidget()
-        day_page.setWidget(day_content)
-        day_layout = QVBoxLayout(day_content)
-        day_layout.setContentsMargins(16, 16, 16, 16)
-        day_layout.setSpacing(16)
-        self.day_title = plain_label(name="CalendarDay")
-        self.day_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.day_info = plain_label(name="SectionTitle")
-        self.day_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        day_layout.addWidget(self.day_title)
-        day_layout.addWidget(self.day_info)
-        self.history_view = HistoryEventsView(texts, history)
+        day_panels = [CalendarDayPage(texts, history if index == 1 else None, preview=index != 1) for index in range(3)]
+        self.day_pages = PeriodSwipePages(day_panels)
+        self.day_pages.stepRequested.connect(self.step)
+        self.day_title = day_panels[1].title
+        self.day_info = day_panels[1].info
+        self.history_view = day_panels[1].history_view
         self.history_view.refreshRequested.connect(lambda: self._load_history(force=True))
-        day_layout.addWidget(self.history_view)
-        day_layout.addStretch()
-        self.stack.addWidget(day_page)
+        self.stack.addWidget(self.day_pages)
         layout.addWidget(self.stack, 1)
         self.selected = plain_label(name="Muted")
         self.source_status = plain_label(name="Muted")
@@ -176,6 +209,7 @@ class CalendarView(QWidget):
     def step(self, direction):
         self.year_pages.reset_period()
         self.month_pages.reset_period()
+        self.day_pages.reset_period()
         candidate = self.shown.addYears(direction) if self.mode == "year" else (self.shown.addMonths(direction) if self.mode == "month" else self.shown.addDays(direction))
         if not candidate.isValid() or not 1 <= candidate.year() <= 9999:
             self.refresh()
@@ -229,11 +263,11 @@ class CalendarView(QWidget):
     def update_details(self):
         weekday = self.texts.weekday(self.date.dayOfWeek())
         self.selected.setText(self.texts.get("calendar.date_weekday", date=self.texts.date(self.date), weekday=weekday))
-        self.day_title.setText(self.texts.date(self.date, long=True))
-        self.day_title.setProperty("current", self.date == self.today())
-        self.day_title.style().unpolish(self.day_title)
-        self.day_title.style().polish(self.day_title)
-        self.day_info.setText(self.holiday_text(self.date))
+        for offset, panel in zip((-1, 0, 1), self.day_pages.pages):
+            day = self.date.addDays(offset)
+            if not day.isValid() or not 1 <= day.year() <= 9999:
+                day = self.date
+            panel.set_day(day, self.today(), self.holiday_text(day))
 
     def retranslate(self):
         self.refresh(load_holidays=False, load_history=False)
@@ -254,7 +288,7 @@ class CalendarView(QWidget):
             if load_holidays:
                 self.holidays.ensure(self.shown.year())
             self.source_status.setText(self.texts.render(self.holidays.status(self.shown.year())))
-        for pager in (self.year_pages, self.month_pages):
+        for pager in (self.year_pages, self.month_pages, self.day_pages):
             pager.reset_period()
         if self.mode in ("year", "month"):
             pager = self.year_pages if self.mode == "year" else self.month_pages

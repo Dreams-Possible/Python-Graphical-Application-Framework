@@ -66,6 +66,7 @@ class LocalizationTests(unittest.TestCase):
         self.assertEqual(resolve_language("system", ["zh-TW", "en-US"]), "zh-CN")
         self.assertEqual(resolve_language("system", ["en-GB"]), "en-US")
         self.assertEqual(resolve_language("system", ["fr-FR"]), "en-US")
+        self.assertEqual(resolve_language("system", ["fr-FR", "zh-CN"]), "en-US")
         self.assertEqual(resolve_language("en-US", ["zh-CN"]), "en-US")
         with self.assertRaises(ValueError):
             resolve_language("bad", [])
@@ -168,6 +169,25 @@ class LocalizationTests(unittest.TestCase):
                         texts.set_language("zh-CN")
                         texts.set_language("en-US")
                     self.assertEqual(texts._missing, set())
+                    calendar_section = settings.registry.section("calendar")
+                    self.assertNotIn("history_language", [field.key for field in calendar_section.fields])
+                    section_keys = [section.key for section in settings.registry.sections]
+                    translation_index = section_keys.index("translation")
+                    self.assertEqual(section_keys[translation_index + 1], "location")
+                    settings.categories.setCurrentRow(translation_index)
+                    provider = settings._editors["provider"]
+                    for value in ("mymemory", "google", "baidu", "youdao", "libre"):
+                        provider.setCurrentIndex(provider.findData(value))
+                        for key, control in settings._editors.items():
+                            if key not in ("provider", "timeout_seconds"):
+                                self.assertEqual(settings._translation_form.isRowVisible(control), key.startswith(value + "_"))
+                    provider.setCurrentIndex(provider.findData("google"))
+                    self.assertEqual(settings._editors["google_key"].echoMode(), QLineEdit.EchoMode.Password)
+                    settings._save()  # Missing credentials must not persist the provider.
+                    self.assertEqual(settings.configuration.get("translation")["provider"], "mymemory")
+                    settings._editors["google_key"].setText("test-key")
+                    settings._save()
+                    self.assertEqual(settings.configuration.get("translation")["provider"], "google")
                     settings.categories.setCurrentRow(0)
                     settings._editors["language"].setCurrentIndex(settings._editors["language"].findData("en-US"))
                     settings._save()

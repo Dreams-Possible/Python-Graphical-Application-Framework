@@ -29,6 +29,9 @@ class UiMetrics:
     swipe_velocity: int = 650
     swipe_axis_bias: float = 1.15
     swipe_edge_resistance: float = 0.22
+    period_frame_inset: int = 6
+    period_frame_width: int = 2
+    period_frame_radius: int = 12
 
     @property
     def navigation_row_height(self):

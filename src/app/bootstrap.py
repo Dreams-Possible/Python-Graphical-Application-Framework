@@ -7,6 +7,7 @@ from src.features.calendar.view import CalendarView
 from src.features.calendar.holidays import HolidayService
 from src.features.calendar.history import HistoryRepository, HistoryService
 from src.features.calendar.settings import SECTION as CALENDAR_SETTINGS
+from src.features.translation.settings import SECTION as TRANSLATION_SETTINGS
 from src.app.main_window import ApplicationWindow, PageDefinition
 from src.features.clock.settings import SECTION as CLOCK_SETTINGS
 from src.features.clock.view import ClockView
@@ -41,13 +42,14 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
     registry.register(CLOCK_SETTINGS)
     registry.register(weather_settings(providers.choices))
     registry.register(CALENDAR_SETTINGS)
+    registry.register(TRANSLATION_SETTINGS)
     registry.register(LOCATION_SETTINGS)
     configuration = Configuration(SettingsRepository(paths.config, registry))
     themes.bind(configuration)
     texts.bind(configuration)
     tasks = TaskRunner()
     holidays = HolidayService(tasks, paths.cache, configuration)
-    history = HistoryService(tasks, configuration, HistoryRepository(paths.cache))
+    history = HistoryService(tasks, configuration, HistoryRepository(paths.cache), texts)
     location = LocationService(configuration, tasks)
     clock = ClockViewModel(configuration, tasks)
     weather = WeatherViewModel(configuration, tasks, providers)

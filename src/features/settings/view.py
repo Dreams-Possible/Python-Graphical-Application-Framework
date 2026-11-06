@@ -107,6 +107,8 @@ class SettingsView(QWidget):
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         if section.key == "location":
             self._location_form = form
+        if section.key == "translation":
+            self._translation_form = form
         for field in section.fields:
             if field.kind == "bool":
                 editor = QCheckBox()
@@ -122,12 +124,20 @@ class SettingsView(QWidget):
                     editor.addItem(self.texts.get(label), value)
             else:
                 editor = QLineEdit()
+                if field.kind == "secret":
+                    editor.setEchoMode(QLineEdit.EchoMode.Password)
             self.texts.bind_text(editor, field.hint_key, setter="setToolTip") if field.hint_key else editor.setToolTip("")
             self.texts.bind_text(editor, field.label_key, setter="setAccessibleName")
             self._editors[field.key] = editor
             field_label = QLabel()
             self.texts.bind_text(field_label, field.label_key)
             form.addRow(field_label, editor)
+            if section.key == "translation" and field.key == "provider":
+                self.translation_hint = plain_label(name="Muted")
+                form.addRow(self.translation_hint)
+                docs = text_button(self.texts, "translation.open_docs")
+                docs.clicked.connect(self._open_translation_docs)
+                form.addRow(docs)
             if section.key == "location" and field.key == "mode" and self.location_service:
                 from src.features.location.picker import LocationPicker
                 self.location_hint = plain_label(name="Muted")
@@ -151,6 +161,9 @@ class SettingsView(QWidget):
             self._editors["endpoint"].textChanged.connect(self._location_mode_changed)
             self._editors["timeout_seconds"].valueChanged.connect(self._location_mode_changed)
             self._location_mode_changed()
+        if section.key == "translation":
+            self._editors["provider"].currentIndexChanged.connect(self._translation_provider_changed)
+            self._translation_provider_changed()
         self.texts.bind_text(self.feedback, "settings.edit_hint")
 
     def retranslate(self):
@@ -167,6 +180,23 @@ class SettingsView(QWidget):
                 for index, (value, key) in enumerate(field.choices):
                     editor.setItemText(index, self.texts.get(key))
                 del blocked
+
+    def _translation_provider_changed(self, *_):
+        if self._key != "translation":
+            return
+        provider = self._editors["provider"].currentData()
+        for key, editor in self._editors.items():
+            if key not in ("provider", "timeout_seconds"):
+                self._translation_form.setRowVisible(editor, key.startswith(provider + "_"))
+        self.texts.bind_text(self.translation_hint, "translation.hint." + provider)
+
+    def _open_translation_docs(self):
+        urls = {"mymemory": "https://mymemory.translated.net/doc/spec.php",
+                "google": "https://cloud.google.com/translate/docs/setup",
+                "baidu": "https://fanyi-api.baidu.com/doc/21",
+                "youdao": "https://ai.youdao.com/DOCSIRMA/html/trans/api/wbfy/index.html",
+                "libre": "https://docs.libretranslate.com/"}
+        QDesktopServices.openUrl(QUrl(urls[self._editors["provider"].currentData()]))
 
     def _location_status_changed(self, message):
         if self._key == "location":
@@ -234,6 +264,8 @@ class SettingsView(QWidget):
                 editor.setText(value)
         if self._key == "location":
             self._location_mode_changed()
+        if self._key == "translation":
+            self._translation_provider_changed()
 
     def _read(self, editor):
         if isinstance(editor, QCheckBox):
@@ -301,6 +333,9 @@ class SettingsView(QWidget):
             if self._key == "location" and values["enabled"] and values["mode"] == "manual":
                 from src.features.location.service import manual_location
                 manual_location(values)
+            if self._key == "translation":
+                from src.features.translation.service import TranslationOptions, validate_options
+                validate_options(TranslationOptions.from_values(values))
             self.configuration.save(self._key, values)
         except (ValueError, OSError) as error:
             LOGGER.warning("设置保存失败：%s，错误类型 %s", self._key, type(error).__name__)

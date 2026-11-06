@@ -52,5 +52,9 @@
   "calendar.history.footer": "{status} · {language} · 精选 {count} 项",
   "calendar.history.footer_hint": "{scope}\n显示 {shown} / {total} 项\n{source}",
   "calendar.history.anniversary": "{years} 周年",
-  "calendar.history.same_year": "当年事件"
+  "calendar.history.same_year": "当年事件",
+  "calendar.day_preview": "松开后查看这一天的精选周年。",
+  "calendar.history.translated": "机器译文 · 悬停查看英文原文",
+  "calendar.history.translation_failed": "翻译暂不可用，显示英文原文",
+  "calendar.history.translation_partial": "部分翻译暂不可用，已保留英文原文。"
 }

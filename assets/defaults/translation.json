@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "values": {
+    "provider": "mymemory",
+    "timeout_seconds": 10,
+    "mymemory_url": "https://api.mymemory.translated.net/get",
+    "google_url": "https://translation.googleapis.com/language/translate/v2",
+    "google_key": "",
+    "baidu_url": "https://fanyi-api.baidu.com/api/trans/vip/translate",
+    "baidu_app_id": "",
+    "baidu_secret": "",
+    "youdao_url": "https://openapi.youdao.com/api",
+    "youdao_app_id": "",
+    "youdao_secret": "",
+    "libre_url": "https://libretranslate.com/translate",
+    "libre_key": ""
+  }
+}
