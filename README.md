@@ -14,6 +14,26 @@
 
 界面共用浅色／深色主题、可伸缩侧边栏和模块内浮岛导航。软件语言支持简体中文、English、Русский及跟随系统；优先匹配对应语言，缺失时回退英文。
 
+## 界面预览
+
+主界面使用可伸缩侧边栏和模块内浮岛导航，时钟保持简洁的居中布局。
+
+![Daylight 主界面：时钟与浮岛导航](docs/images/screenshots/main-clock.png)
+
+| 深色天气与趋势图 | 日历历史事件与逐条翻译 |
+| --- | --- |
+| ![深色天气：小时趋势与每日预报](docs/images/screenshots/weather-dark.png) | ![日历日视图：英文原文与已完成的中文译文](docs/images/screenshots/calendar-history.png) |
+| **倒计时**：切换页面后继续运行 | **多语言**：俄语月历界面 |
+| ![25 分钟倒计时](docs/images/screenshots/timer.png) | ![俄语日历月视图](docs/images/screenshots/calendar-russian.png) |
+
+截图来自真实 Qt 控件，使用临时配置和固定演示数据；天气数值与翻译进度用于展示，不代表实时 API 返回。点击图片可查看大图。重新生成：
+
+```powershell
+.venv/Scripts/python.exe scripts/capture_screenshots.py
+```
+
+截图保存在 [`docs/images/screenshots/`](docs/images/screenshots/)，脚本不读取个人配置、不发起网络请求。
+
 ## 快速运行
 
 安装 Python 后，在仓库根目录运行：
