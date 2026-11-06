@@ -1,5 +1,5 @@
 """历史事件展示组件：正文保持来源语言，界面标签使用应用资源。"""
-from PySide6.QtCore import QDate, Qt, QUrl, Signal
+from PySide6.QtCore import QDate, Qt, QUrl, Signal, QLocale
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QWidget
 from src.shared.messages import message
@@ -45,15 +45,16 @@ class HistoryEventsView(QWidget):
         state = self.service.state if self.service else HistoryState()
         self.texts.bind_text(self.heading, "calendar.history.title", date=self.texts.short_date(self.day))
         self.retry.setEnabled(self.service is not None and not state.busy)
-        language = message("settings.calendar.history_language." + state.language)
+        language = QLocale(state.language).nativeLanguageName() or state.language
         self.texts.bind_text(self.metadata, "calendar.history.footer", status=state.status, language=language, count=len(state.events))
         self.texts.bind_text(self.metadata, "calendar.history.footer_hint", setter="setToolTip",
             scope=message("calendar.history.scope"), shown=len(state.events), total=state.total,
             source=message("calendar.history.source", language=language))
         self._update_anniversaries()
-        if state.events == self._shown_events:
+        shown = (state.events, state.busy)
+        if shown == self._shown_events:
             return
-        self._shown_events = state.events
+        self._shown_events = shown
         self._anniversaries = []
         while self.events.count():
             widget = self.events.takeAt(0).widget()
@@ -80,7 +81,11 @@ class HistoryEventsView(QWidget):
             content.setSpacing(8)
             content.addWidget(plain_label(event.text))
             if event.original_text:
-                note = text_label(self.texts, "calendar.history.translated" if event.translation_status == "translated" else "calendar.history.translation_failed", "Muted")
+                key = ("calendar.history.translated" if event.translation_status == "translated" else
+                       "calendar.history.translating_item" if event.translation_status == "pending" and state.busy else
+                       "calendar.history.translation_pending" if event.translation_status == "pending" else
+                       "calendar.history.translation_failed")
+                note = text_label(self.texts, key, "Muted")
                 note.setToolTip(event.original_text)
                 content.addWidget(note)
             if event.article:

@@ -67,6 +67,8 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
         values = configuration.get("location")
         clock.set_location_timezone(fix.timezone if fix and values["enabled"] and values["use_for_clock"] else "")
         holidays.set_location(fix)
+        weather.set_current_location(fix)
+        history.preload()
 
     location.updated.connect(apply_location)
 
@@ -85,4 +87,5 @@ def create_main_window(paths: UserPaths, logs: LoggingService, themes: ThemeMana
     QTimer.singleShot(0, location.refresh)
     if configuration.get("weather")["auto_refresh"]:
         QTimer.singleShot(0, weather.refresh)
+    QTimer.singleShot(0, lambda: history.start_preload(holidays.today))
     return window

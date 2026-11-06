@@ -11,6 +11,8 @@ from urllib.error import HTTPError, URLError
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from uuid import uuid4
 import logging
+from threading import Condition
+from contextlib import contextmanager
 
 from src.features.translation.settings import PROVIDERS
 from src.shared.errors import ui_error
@@ -20,6 +22,31 @@ from src.shared.paths import resource_path
 from src.shared.tasks import TaskCancelled, check_cancelled
 
 LOGGER = logging.getLogger("workbench.translation")
+
+
+class _RequestLimiter:
+    """所有集合共用请求配额，多个日期不能各自放大并发上限。"""
+    def __init__(self):
+        self.condition = Condition()
+        self.active = 0
+
+    @contextmanager
+    def slot(self, limit, stop):
+        with self.condition:
+            while self.active >= limit:
+                check_cancelled(stop)
+                self.condition.wait(0.05)
+            check_cancelled(stop)
+            self.active += 1
+        try:
+            yield
+        finally:
+            with self.condition:
+                self.active -= 1
+                self.condition.notify_all()
+
+
+_REQUEST_LIMITER = _RequestLimiter()
 
 
 @dataclass(frozen=True)
@@ -72,6 +99,15 @@ def normalize_language(language):
     if len(parts) == 2 and parts[0] in _COMMON and len(parts[1]) == 2 and parts[1].isalpha():
         return parts[0]
     raise ui_error(TranslationError, "translation.unsupported_language")
+
+
+def preferred_target_language(language, provider):
+    """优先对应语言；适配器未映射的语言统一回退英文，不用“非中文”推断。"""
+    try:
+        normalized = normalize_language(language)
+        return normalized if normalized in supported_languages(provider) else "en"
+    except TranslationError:
+        return "en"
 
 
 def _language_pair(provider, source, target):
@@ -289,7 +325,7 @@ class Translator:
             except OSError:
                 pass
 
-    def translate_many(self, texts, timeout, stop, options=None, *, source_language="en", target_language="zh-CN", use_cache=True, max_workers=None):
+    def translate_many(self, texts, timeout, stop, options=None, *, source_language="en", target_language="zh-CN", use_cache=True, max_workers=None, on_result=None):
         """后台线程调用；原生数组组批或有限并发，按输入顺序返回 TranslationResult。
 
         单项失败不伪装成译文；认证/配额/语言组合拒绝后停止派发新请求。
@@ -307,6 +343,13 @@ class Translator:
             raise ValueError("max_workers must be between 1 and 10")
         source, target, _, _ = _language_pair(options.provider, source_language, target_language)
         results, missing = [None] * len(texts), []
+        notified = set()
+
+        def notify(index):
+            if on_result and index not in notified and results[index] is not None:
+                check_cancelled(stop)
+                on_result(index, results[index])
+                notified.add(index)
         for index, text in enumerate(texts):
             if not text.strip() or source == target:
                 results[index] = TranslationResult(text)
@@ -316,6 +359,7 @@ class Translator:
                 results[index] = TranslationResult(cached)
             else:
                 missing.append(index)
+            notify(index)
         if not missing:
             return tuple(results)
         try:
@@ -323,6 +367,7 @@ class Translator:
         except (ValueError, OSError) as error:
             for index in missing:
                 results[index] = TranslationResult(error=error)
+                notify(index)
             return tuple(results)
 
         native = options.provider in ("google", "libre")
@@ -348,11 +393,11 @@ class Translator:
                     options.provider, len(texts), len(missing), "batch" if native else "concurrent", max_workers, len(work))
 
         def execute(group):
-            check_cancelled(stop)
-            if native:
-                return request_translation_batch([part for _, _, part in group], options, stop, source, target)
-            return [self.translate(group[0][2], timeout, stop, options,
-                                   source_language=source, target_language=target, use_cache=False)]
+            with _REQUEST_LIMITER.slot(max_workers, stop):
+                if native:
+                    return request_translation_batch([part for _, _, part in group], options, stop, source, target)
+                return [self.translate(group[0][2], timeout, stop, options,
+                                       source_language=source, target_language=target, use_cache=False)]
 
         executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="translation")
         pending, next_group, blocked = {}, 0, False
@@ -385,6 +430,11 @@ class Translator:
                             results[index] = TranslationResult(error=error)
                         if error.reason in ("quota", "authentication", "unsupported_pair", "credentials_required", "invalid_configuration"):
                             blocked = True
+                    for index in {item[0] for item in group}:
+                        parts = pieces.get(index)
+                        if results[index] is None and parts and all(part is not None for part in parts):
+                            results[index] = TranslationResult(" ".join(parts))
+                        notify(index)
             check_cancelled(stop)
         finally:
             for future in pending:
@@ -394,6 +444,7 @@ class Translator:
             if results[index] is None:
                 parts = pieces.get(index)
                 results[index] = TranslationResult(" ".join(parts)) if parts and all(part is not None for part in parts) else TranslationResult(skipped=True)
+            notify(index)
         check_cancelled(stop)
         if use_cache:
             for index in missing:

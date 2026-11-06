@@ -56,5 +56,9 @@
   "calendar.day_preview": "Release to view selected anniversaries for this day.",
   "calendar.history.translated": "Machine translation · Hover for the English original",
   "calendar.history.translation_failed": "Translation unavailable; showing the English original",
-  "calendar.history.translation_partial": "Some translations are unavailable; English originals are retained."
+  "calendar.history.translation_partial": "Some translations are unavailable; English originals are retained.",
+  "calendar.history.translation_quota": "Translation quota or rate limit reached. Showing English for now; retry later or choose another translation provider.",
+  "calendar.history.translating": "English originals ready. Translating ({done}/{total}).",
+  "calendar.history.translating_item": "Translating; showing the English original for now",
+  "calendar.history.translation_pending": "Not translated yet; showing the English original"
 }

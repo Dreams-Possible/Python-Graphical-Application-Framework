@@ -110,5 +110,9 @@
   "settings.calendar.history_language.en": "English Wikipedia",
   "settings.calendar.history_limit.label": "Maximum selected anniversaries to show",
   "settings.calendar.history_url.label": "History endpoint",
-  "settings.calendar.history_url.hint": "English Wikifeeds-compatible URL with {{language}}, {{month}} and {{day}}. Chinese UI uses MyMemory translation (5000 anonymous characters/day); otherwise English originals are shown."
+  "settings.calendar.history_url.hint": "English Wikifeeds-compatible URL with {{language}}, {{month}} and {{day}}. Chinese UI uses MyMemory translation (5000 anonymous characters/day); otherwise English originals are shown.",
+  "settings.calendar.history_preload.label": "Preload selected anniversaries automatically",
+  "settings.calendar.history_preload.hint": "Check nearby dates at startup and periodically. Fill missing or expired caches only; Chinese translations use the selected provider quota.",
+  "settings.calendar.history_preload_days.label": "Preload days before and after today (each side)",
+  "settings.calendar.history_preload_minutes.label": "Preload check interval (minutes)"
 }

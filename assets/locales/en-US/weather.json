@@ -89,5 +89,7 @@
   "weather.section.history_count.other": "History · {count} archived days",
   "weather.section.history_count.one": "History · {count} archived day",
   "weather.search.results.other": "Found {count} locations. Select one to view weather.",
-  "weather.search.results.one": "Found {count} location. Select it to view weather."
+  "weather.search.results.one": "Found {count} location. Select it to view weather.",
+  "weather.state.waiting_location": "Current location is unavailable. Configure it in Settings → Current location. Weather search remains available independently.",
+  "weather.state.location_changed": "Current location updated. Ready to load local weather."
 }

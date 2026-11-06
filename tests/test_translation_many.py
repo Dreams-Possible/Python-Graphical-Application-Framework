@@ -5,6 +5,7 @@ from threading import Event, Lock, Barrier
 from urllib.error import HTTPError
 import unittest
 from unittest.mock import patch
+from concurrent.futures import ThreadPoolExecutor
 
 from src.features.translation import Translator, TranslationOptions
 from src.shared.tasks import TaskCancelled
@@ -15,6 +16,29 @@ class ManyTests(unittest.TestCase):
         self.directory = TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.translator = Translator(Path(self.directory.name))
+
+    def test_multiple_date_batches_share_one_global_concurrency_limit(self):
+        from src.features.translation.service import _REQUEST_LIMITER
+        lock, barrier = Lock(), Barrier(2)
+        active, maximum = 0, 0
+        def translate(text, *args, **kwargs):
+            nonlocal active, maximum
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            try:
+                barrier.wait(timeout=3)
+                return 'T:' + text
+            finally:
+                with lock:
+                    active -= 1
+        def batch():
+            return self.translator.translate_many(['a', 'b', 'c', 'd'], 5, Event(), use_cache=False, max_workers=2)
+        with patch.object(self.translator, 'translate', side_effect=translate), ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(batch) for _ in range(2)]
+            self.assertTrue(all(result.succeeded for future in futures for result in future.result(timeout=8)))
+        self.assertEqual(maximum, 2)
+        self.assertEqual(_REQUEST_LIMITER.active, 0)
 
     def test_setting_controls_concurrency_and_does_not_invalidate_translation_cache(self):
         from dataclasses import replace

@@ -51,13 +51,20 @@ def load_catalog(directory: Path) -> dict[str, str]:
     return result
 
 
-def resolve_language(mode: str, system_languages: list[str]) -> str:
-    if mode in ("zh-CN", "en-US"):
+def resolve_language(mode: str, system_languages: list[str], available_languages=("zh-CN", "en-US")) -> str:
+    if mode in available_languages:
         return mode
     if mode != "system":
         raise ValueError(f"Unsupported software language: {mode}")
-    if system_languages and system_languages[0].replace("_", "-").lower().split("-")[0] == "zh":
-        return "zh-CN"
+    if system_languages:
+        preferred = system_languages[0].replace("_", "-").lower()
+        for language in available_languages:
+            if language.lower() == preferred:
+                return language
+        base = preferred.split("-")[0]
+        for language in available_languages:
+            if language.lower().split("-")[0] == base:
+                return language
     return "en-US"
 
 
@@ -67,15 +74,15 @@ class Localization(QObject):
     def __init__(self, directory=None, mode="system", system_languages=None):
         super().__init__()
         self.directory = Path(directory) if directory else resource_path("locales")
-        self.catalogs = {"zh-CN": load_catalog(self.directory / "zh-CN")}
-        try:
-            self.catalogs["en-US"] = load_catalog(self.directory / "en-US")
-        except FileNotFoundError:
-            LOGGER.warning("English catalog missing; using the default catalog")
-            self.catalogs["en-US"] = {}
-        for key in self.catalogs["zh-CN"].keys() & self.catalogs["en-US"].keys():
-            if placeholders(self.catalogs["zh-CN"][key]) != placeholders(self.catalogs["en-US"][key]):
-                raise ValueError(f"Translation parameters differ: {key}")
+        # 英文是唯一最终回退；新增语言目录自动参与系统首选语言匹配。
+        self.catalogs = {"en-US": load_catalog(self.directory / "en-US")}
+        for directory in sorted(self.directory.iterdir()):
+            if directory.is_dir() and directory.name != "en-US":
+                catalog = load_catalog(directory)
+                for key in catalog.keys() & self.catalogs["en-US"].keys():
+                    if placeholders(catalog[key]) != placeholders(self.catalogs["en-US"][key]):
+                        raise ValueError(f"Translation parameters differ: {key}")
+                self.catalogs[directory.name] = catalog
         self.system_languages = system_languages
         self.language = ""
         self._missing = set()
@@ -95,7 +102,7 @@ class Localization(QObject):
             self.set_language(self.configuration.get("appearance")["language"])
 
     def set_language(self, mode):
-        language = resolve_language(mode, self.system_languages if self.system_languages is not None else QLocale.system().uiLanguages())
+        language = resolve_language(mode, self.system_languages if self.system_languages is not None else QLocale.system().uiLanguages(), tuple(self.catalogs))
         self.mode = mode
         if language == self.language:
             return
@@ -178,14 +185,18 @@ class Localization(QObject):
             self._qt_translator = None
 
     def get(self, key: str, **parameters) -> str:
-        if key + ".other" in self.catalogs["zh-CN"]:
-            key += ".one" if self.language == "en-US" and parameters.get("count") == 1 else ".other"
+        current = self.catalogs[self.language]
+        if key + ".other" in current or key + ".other" in self.catalogs["en-US"]:
+            if parameters.get("count") == 1 and (key + ".one" in current or key + ".other" not in current):
+                key += ".one"
+            else:
+                key += ".other"
         template = self.catalogs[self.language].get(key)
         if template is None:
             if (self.language, key) not in self._missing:
                 LOGGER.warning("Missing translation: %s / %s", self.language, key)
                 self._missing.add((self.language, key))
-            template = self.catalogs["zh-CN"].get(key, f"[{key}]")
+            template = self.catalogs["en-US"].get(key, f"[{key}]")
         expected = placeholders(template)
         if expected != parameters.keys():
             raise ValueError(f"Parameters for {key}: expected {sorted(expected)}, got {sorted(parameters)}")

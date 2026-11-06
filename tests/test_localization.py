@@ -76,15 +76,16 @@ class LocalizationTests(unittest.TestCase):
             root = Path(directory)
             for language in ("zh-CN", "en-US"):
                 (root / language).mkdir()
-            (root / "zh-CN" / "common.json").write_text('{"greeting": "你好 {name}"}', encoding="utf-8")
-            (root / "en-US" / "common.json").write_text('{}', encoding="utf-8")
-            texts = Localization(root, "en-US")
-            self.assertEqual(texts.get("greeting", name="Sam"), "你好 Sam")
+            (root / "zh-CN" / "common.json").write_text('{}', encoding="utf-8")
+            (root / "en-US" / "common.json").write_text('{"greeting": "Hello {name}"}', encoding="utf-8")
+            texts = Localization(root, "zh-CN")
+            self.assertEqual(texts.get("greeting", name="Sam"), "Hello Sam")
             self.assertEqual(texts.get("missing"), "[missing]")
             (root / "en-US" / "common.json").write_text('{"x": "one", "x": "two"}', encoding="utf-8")
             with self.assertRaises(ValueError):
                 load_catalog(root / "en-US")
-            (root / "en-US" / "common.json").write_text('{"greeting": "Hello {other}"}', encoding="utf-8")
+            (root / "zh-CN" / "common.json").write_text('{"greeting": "你好 {other}"}', encoding="utf-8")
+            (root / "en-US" / "common.json").write_text('{"greeting": "Hello {name}"}', encoding="utf-8")
             with self.assertRaises(ValueError):
                 Localization(root)
 
@@ -172,6 +173,9 @@ class LocalizationTests(unittest.TestCase):
                     calendar_section = settings.registry.section("calendar")
                     self.assertNotIn("history_language", [field.key for field in calendar_section.fields])
                     section_keys = [section.key for section in settings.registry.sections]
+                    settings.categories.setCurrentRow(section_keys.index("weather"))
+                    for key in ("follow_current_location", "location_name", "latitude", "longitude"):
+                        self.assertNotIn(key, settings._editors)
                     translation_index = section_keys.index("translation")
                     self.assertEqual(section_keys[translation_index + 1], "location")
                     settings.categories.setCurrentRow(translation_index)

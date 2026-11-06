@@ -17,6 +17,9 @@ SECTION = SettingsSection("calendar", "settings.calendar.title", "settings.calen
     Field("international_url", "settings.calendar.international_url.label"),
     Field("history_enabled", "settings.calendar.history_enabled.label", "bool"),
     Field("history_limit", "settings.calendar.history_limit.label", "int", 1, 100),
+    Field("history_preload", "settings.calendar.history_preload.label", "bool", hint_key="settings.calendar.history_preload.hint"),
+    Field("history_preload_days", "settings.calendar.history_preload_days.label", "int", 0, 30),
+    Field("history_preload_minutes", "settings.calendar.history_preload_minutes.label", "int", 5, 1440),
     Field("history_url", "settings.calendar.history_url.label", hint_key="settings.calendar.history_url.hint"),
     Field("timeout_seconds", "settings.calendar.timeout_seconds.label", "int", 2, 30),
 ), migrate=migrate_calendar_settings)

@@ -206,7 +206,7 @@ class HistoryTests(unittest.TestCase):
         texts.set_language("zh-CN")
         self.assertEqual(self.tasks.sequence, sequence + 1)
         self.assertEqual(self.service._current.language, "en")
-        self.assertEqual(self.service._current.target_language, "zh")
+        self.assertEqual(self.service._current.target_language, "zh-CN")
         self.tasks.finish(self.snapshot(self.service._current))
         self.assertIn("Event text", [label.text() for label in view.history_view.findChildren(QLabel)])
         view.set_mode("year")

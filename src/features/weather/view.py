@@ -161,7 +161,7 @@ class WeatherView(QWidget):
         search_form.addWidget(self.search_status)
         search_form.addWidget(self.search_error)
         cancel_search = text_button(texts, "weather.search.cancel")
-        cancel_search.clicked.connect(model.cancel)
+        cancel_search.clicked.connect(model.cancel_search)
         self.cancel_search = cancel_search
         search_form.addWidget(cancel_search, 0, Qt.AlignmentFlag.AlignLeft)
 
@@ -171,7 +171,7 @@ class WeatherView(QWidget):
         self.refresh.setObjectName("Primary")
         self.refresh.clicked.connect(model.refresh)
         self.cancel = text_button(texts, "weather.cancel")
-        self.cancel.clicked.connect(model.cancel)
+        self.cancel.clicked.connect(model.cancel_current)
         actions.addWidget(self.status, 1)
         actions.addWidget(self.refresh)
         actions.addWidget(self.cancel)
@@ -186,11 +186,14 @@ class WeatherView(QWidget):
         self.search_spacer = QWidget()
         search_layout.addWidget(self.search_spacer, 1)
         model.changed.connect(self.render)
+        model.search_changed.connect(self.render_search)
         self.render(model.state)
+        self.render_search(model.search_state)
         texts.changed.connect(self.retranslate)
 
     def retranslate(self):
         self.render(self.model.state)
+        self.render_search(self.model.search_state)
 
     def _search(self):
         self._searched = True
@@ -198,10 +201,10 @@ class WeatherView(QWidget):
         self.search_details.hide()
         self.search_spacer.show()
         self.model.search(self.query.text())
-        self.render(self.model.state)
+        self.render_search(self.model.search_state)
 
     def _select_location(self, index):
-        if self.model.state.busy or not 0 <= index < len(self.model.state.locations):
+        if self.model.search_state.busy or not 0 <= index < len(self.model.search_state.locations):
             return
         self._preview = True
         self.search_details.show()
@@ -211,6 +214,14 @@ class WeatherView(QWidget):
     @Slot(object)
     def render(self, state: WeatherState) -> None:
         self.status.setText(self.texts.render(state.status))
+        self.error.setText(self.texts.render(state.error))
+        self.error.setVisible(bool(state.error))
+        self.refresh.setEnabled(not state.busy)
+        self.cancel.setEnabled(state.busy)
+        self.details.render(state)
+
+    @Slot(object)
+    def render_search(self, state: WeatherState) -> None:
         self.locations.setVisible(self._searched and bool(state.locations) and not state.searching)
         self.locations.setEnabled(not state.busy and not state.searching)
         self.search_status.setVisible(self._searched)
@@ -229,12 +240,8 @@ class WeatherView(QWidget):
         self.search_status.setText(message)
         self.search_error.setText(self.texts.render(state.error))
         self.search_error.setVisible(self._searched and bool(state.error))
-        self.cancel_search.setVisible(state.searching)
-        self.error.setText(self.texts.render(state.error))
-        self.error.setVisible(bool(state.error))
-        self.refresh.setEnabled(not state.busy)
+        self.cancel_search.setVisible(state.searching or state.busy)
         self.search.setEnabled(not state.searching)
-        self.cancel.setEnabled(state.busy or state.searching)
         if state.locations != self._locations:
             self._locations = state.locations
             self.locations.clear()
@@ -242,7 +249,6 @@ class WeatherView(QWidget):
             self.locations.setCurrentRow(-1)
             row_height = max(38, self.locations.sizeHintForRow(0))
             self.locations.setFixedHeight(min(160, row_height * max(1, len(state.locations)) + 12))
-        self.details.render(state)
         self.search_details.render(state)
     def showEvent(self, event) -> None:
         super().showEvent(event)

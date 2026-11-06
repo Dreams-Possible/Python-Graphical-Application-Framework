@@ -6,6 +6,9 @@
     "international_url": "https://date.nager.at/api/v3/PublicHolidays/{year}/{country}",
     "history_enabled": true,
     "history_url": "https://{language}.wikipedia.org/api/rest_v1/feed/onthisday/selected/{month}/{day}",
-    "history_limit": 10
+    "history_limit": 10,
+    "history_preload": true,
+    "history_preload_days": 7,
+    "history_preload_minutes": 60
   }
 }

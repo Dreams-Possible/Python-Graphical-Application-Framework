@@ -89,5 +89,7 @@
   "weather.section.history_count.other": "历史 · {count} 天归档",
   "weather.section.history_count.one": "历史 · {count} 天归档",
   "weather.search.results.other": "找到 {count} 个地点，点击查看天气。",
-  "weather.search.results.one": "找到 {count} 个地点，点击查看天气。"
+  "weather.search.results.one": "找到 {count} 个地点，点击查看天气。",
+  "weather.state.waiting_location": "当前位置暂不可用，请在“设置 → 当前位置”中配置或重新定位。搜索天气仍可独立查询。",
+  "weather.state.location_changed": "当前位置已更新，准备获取该地区天气。"
 }

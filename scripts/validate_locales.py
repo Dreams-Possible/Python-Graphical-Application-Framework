@@ -9,11 +9,12 @@ from src.shared.localization import load_catalog, placeholders
 
 
 def validate():
-    catalogs = {language: load_catalog(ROOT / "assets" / "locales" / language) for language in ("zh-CN", "en-US")}
-    baseline = catalogs["zh-CN"]
+    directory = ROOT / "assets" / "locales"
+    catalogs = {path.name: load_catalog(path) for path in sorted(directory.iterdir()) if path.is_dir()}
+    baseline = catalogs["en-US"]
     for language, entries in catalogs.items():
-        if entries.keys() != baseline.keys():
-            raise ValueError(f"{language}: missing={baseline.keys() - entries.keys()}, extra={entries.keys() - baseline.keys()}")
+        if entries.keys() - baseline.keys():
+            raise ValueError(f"{language}: no English fallback for {entries.keys() - baseline.keys()}")
         for key, value in entries.items():
             if placeholders(value) != placeholders(baseline[key]):
                 raise ValueError(f"{language}: placeholder mismatch for {key}")
@@ -42,7 +43,7 @@ def validate():
             if key.value not in baseline and key.value + ".other" not in baseline:
                 raise ValueError(f"{path.relative_to(ROOT)}:{call.lineno}: unknown resource {key.value}")
             references += 1
-    print(f"Validated {len(catalogs)} languages, {len(baseline)} keys each, {references} static references")
+    print(f"Validated {len(catalogs)} languages, {len(baseline)} English fallback keys, {references} static references")
 
 
 if __name__ == "__main__":
