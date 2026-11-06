@@ -123,7 +123,7 @@ class LocalizationTests(unittest.TestCase):
                     settings = window._pages.widget(4)
                     self.assertEqual(settings.configuration.get("appearance")["language"], "system")
                     app_index = next(i for i, section in enumerate(settings.registry.sections) if section.key == "app")
-                    settings.categories.setCurrentRow(app_index)
+                    settings.categories.setCurrentRow(settings._category_keys.index("app"))
                     editor = settings._editors["window_width"]
                     editor.setValue(1234)
                     clock = window._pages.widget(0)
@@ -166,7 +166,7 @@ class LocalizationTests(unittest.TestCase):
                     self.assertIn("Restore", settings._reset_dialog.text())
                     # Every registered form must resolve its labels and option keys.
                     for i in range(len(settings.registry.sections)):
-                        settings.categories.setCurrentRow(i)
+                        settings.categories.setCurrentRow(settings._category_keys.index(settings.registry.sections[i].key))
                         texts.set_language("zh-CN")
                         texts.set_language("en-US")
                         texts.set_language("ru-RU")
@@ -174,12 +174,12 @@ class LocalizationTests(unittest.TestCase):
                     calendar_section = settings.registry.section("calendar")
                     self.assertNotIn("history_language", [field.key for field in calendar_section.fields])
                     section_keys = [section.key for section in settings.registry.sections]
-                    settings.categories.setCurrentRow(section_keys.index("weather"))
+                    settings.categories.setCurrentRow(settings._category_keys.index("weather"))
                     for key in ("follow_current_location", "location_name", "latitude", "longitude"):
                         self.assertNotIn(key, settings._editors)
                     translation_index = section_keys.index("translation")
                     self.assertEqual(section_keys[translation_index + 1], "location")
-                    settings.categories.setCurrentRow(translation_index)
+                    settings.categories.setCurrentRow(settings._category_keys.index("translation"))
                     provider = settings._editors["provider"]
                     concurrency = settings._editors["max_workers"]
                     self.assertEqual((concurrency.minimum(), concurrency.maximum(), concurrency.value()), (1, 10, 10))
@@ -197,7 +197,7 @@ class LocalizationTests(unittest.TestCase):
                     settings._save()
                     self.assertEqual(settings.configuration.get("translation")["provider"], "google")
                     self.assertEqual(settings.configuration.get("translation")["max_workers"], 3)
-                    settings.categories.setCurrentRow(0)
+                    settings.categories.setCurrentRow(settings._category_keys.index("appearance"))
                     settings._editors["language"].setCurrentIndex(settings._editors["language"].findData("en-US"))
                     settings._save()
                     self.assertEqual(settings.configuration.get("appearance")["language"], "en-US")

@@ -113,7 +113,11 @@
   "settings.calendar.history_url.hint": "英文 WikiFeed 兼容地址，包含 {{language}}、{{month}}、{{day}}。原文独立缓存；翻译跟随软件语言并使用所选服务。",
   "settings.calendar.history_preload.label": "自动预加载精选周年",
   "settings.calendar.history_preload.hint": "启动后及定时检查今天前后日期，仅补齐缺失或过期缓存；翻译会使用所选服务的额度。",
-  "settings.calendar.history_preload_days.label": "预加载前后天数（每侧）",
   "settings.calendar.history_preload_minutes.label": "预加载检查间隔（分钟）",
-  "settings.appearance.language.ru-RU": "Русский"
+  "settings.appearance.language.ru-RU": "Русский",
+  "settings.calendar.history_preload_before.label": "向前预加载天数",
+  "settings.calendar.history_preload_after.label": "向后预加载天数",
+  "settings.group.general": "基础设置",
+  "settings.group.features": "功能设置",
+  "settings.group.services": "服务与数据"
 }

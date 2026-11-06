@@ -67,7 +67,7 @@ class StageTests(unittest.TestCase):
                     self.wait_until(lambda: tasks.active_count == 0)
                     self.assertFalse(service.state.busy)
                     self.assertEqual(service.state.status.key, 'calendar.history.translation_quota')
-                    self.assertEqual(json.loads((repo.cache / '11-06/translated.json').read_text(encoding='utf-8'))['translations'], {'0': '中文一'})
+                    self.assertEqual(json.loads((repo.cache / '11-06/translated.zh-CN.json').read_text(encoding='utf-8'))['translations'], {'0': '中文一'})
                     self.assertEqual(source.call_count, 1)
                     service.load(date(2026, 11, 6))
                     self.wait_until(lambda: tasks.active_count == 0)

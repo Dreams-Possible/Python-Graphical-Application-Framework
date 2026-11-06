@@ -61,6 +61,7 @@ class WeatherDetails(QWidget):
             scroller.setWidgetResizable(True)
             scroller.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             scroller.setWidget(graphic)
+            graphic.setAutoFillBackground(False)
             scroller.viewport().setAutoFillBackground(False)
             section_layout.addWidget(scroller)
             layout.addWidget(section)

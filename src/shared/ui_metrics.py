@@ -17,6 +17,14 @@ class UiMetrics:
     page_margin_y: int = 14
     page_spacing: int = 10
     heading_spacing: int = 4
+    settings_row_height: int = 48
+    settings_row_padding: int = 12
+    settings_row_padding_y: int = 6
+    settings_note_height: int = 32
+    settings_column_gap: int = 24
+    settings_group_height: int = 38
+    settings_group_gap: int = 16
+    settings_group_line_width: int = 48
     settings_categories_width: int = 168
     about_width: int = 460
     about_height: int = 310

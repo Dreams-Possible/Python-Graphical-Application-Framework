@@ -132,7 +132,7 @@ class HistoryRepository:
 
     def _path(self, query):
         date(2000, query.month, query.day)
-        name = "translated.json" if query.needs_translation else "source.json"
+        name = f"translated.{query.target_language}.json" if query.needs_translation else "source.json"
         return self.cache / f"{query.month:02d}-{query.day:02d}" / name
 
     def _source_key(self, query):
@@ -148,7 +148,11 @@ class HistoryRepository:
 
     def read(self, query):
         try:
-            doc = json.loads(self._path(query).read_text(encoding="utf-8"))
+            path = self._path(query)
+            # 旧集合只有匹配当前语言和服务时才复用，后续写入语言独立文件。
+            if query.needs_translation and not path.exists():
+                path = path.with_name("translated.json")
+            doc = json.loads(path.read_text(encoding="utf-8"))
             key = self._translation_key(query) if query.needs_translation else self._source_key(query)
             if query.needs_translation:
                 raw = self.read(replace(query, target_language="en"))
@@ -228,6 +232,8 @@ class HistoryRepository:
                     LOGGER.warning("历史事件翻译失败，保留原文：%s", getattr(result.error, "reason", type(result.error).__name__))
                     translated[index] = replace(translated[index], translation_status="failed")
                 handled.add(position)
+                if result.succeeded:
+                    self.save(HistorySnapshot(query, raw.fetched_at, tuple(translated)))
                 if on_progress:
                     on_progress(HistorySnapshot(query, raw.fetched_at, tuple(translated), translation_error, "translating"))
 
@@ -301,7 +307,8 @@ class HistoryService(QObject):
         values = self.configuration.get("calendar")
         return dict({key: values[key] for key in ("history_enabled", "history_url", "history_limit", "timeout_seconds")},
                     history_preload=values.get("history_preload", True),
-                    history_preload_days=values.get("history_preload_days", 7),
+                    history_preload_before=values.get("history_preload_before", 1),
+                    history_preload_after=values.get("history_preload_after", 2),
                     history_preload_minutes=values.get("history_preload_minutes", 60),
                     translation=TranslationOptions.from_values(self.configuration.get("translation")))
 
@@ -376,7 +383,9 @@ class HistoryService(QObject):
         queued = {query.key for query in self._preload_queue}
         queued.update(query.key for _, query in self._background.values())
         # 今天优先，再按距离交替扩展；跨年仍按月日集合缓存。
-        offsets = [0] + [offset for distance in range(1, self._values["history_preload_days"] + 1) for offset in (-distance, distance)]
+        before, after = self._values["history_preload_before"], self._values["history_preload_after"]
+        offsets = [0] + [offset for distance in range(1, max(before, after) + 1)
+                         for offset in (-distance, distance) if -before <= offset <= after]
         added = 0
         for offset in offsets:
             try:
@@ -390,7 +399,7 @@ class HistoryService(QObject):
             self._preload_queue.append(query)
             queued.add(query.key)
             added += 1
-        LOGGER.info("历史预加载检查：范围 ±%d 天，新增 %d 个日期，后台在途 %d", self._values["history_preload_days"], added, len(self._background))
+        LOGGER.info("历史预加载检查：前 %d 天、后 %d 天，新增 %d 个日期，后台在途 %d", before, after, added, len(self._background))
         self._pump_preload()
 
     def _pump_preload(self):
@@ -506,9 +515,14 @@ class HistoryService(QObject):
         self._submit(query)
 
     def _submit(self, query):
+        # 用户打开的日期与预加载使用同一任务集合，页面只订阅结果。
         self._pending = None
+        key = f"calendar.history.date.{self._preload_epoch}.{query.key}"
+        self._generation = -1
         try:
-            self._generation = self._submit_fetch(TASK_KEY, query)
+            generation = self._submit_fetch(key, query)
+            self._background[key] = (generation, query)
+            self._waiting_background = query.key
         except RuntimeError:
             self._publish(query, self._memo.get(query.key), message("calendar.history.failed"))
 

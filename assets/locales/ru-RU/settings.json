@@ -113,7 +113,11 @@
   "settings.calendar.history_url.hint": "Совместимый с английским Wikifeeds адрес с {{language}}, {{month}} и {{day}}. Оригиналы загружаются на английском; перевод следует языку приложения и использует выбранный сервис.",
   "settings.calendar.history_preload.label": "Автоматически загружать избранные годовщины",
   "settings.calendar.history_preload.hint": "Проверять соседние даты при запуске и по расписанию. Дополнять только отсутствующий или устаревший кэш; перевод расходует квоту выбранного сервиса.",
-  "settings.calendar.history_preload_days.label": "Дней до и после сегодня (с каждой стороны)",
   "settings.calendar.history_preload_minutes.label": "Интервал проверки предварительной загрузки (минуты)",
-  "settings.appearance.language.ru-RU": "Русский"
+  "settings.appearance.language.ru-RU": "Русский",
+  "settings.calendar.history_preload_before.label": "Дней до сегодня",
+  "settings.calendar.history_preload_after.label": "Дней после сегодня",
+  "settings.group.general": "Общие настройки",
+  "settings.group.features": "Функции",
+  "settings.group.services": "Сервисы и данные"
 }

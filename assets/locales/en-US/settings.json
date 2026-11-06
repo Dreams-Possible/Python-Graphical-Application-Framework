@@ -113,7 +113,11 @@
   "settings.calendar.history_url.hint": "English Wikifeeds-compatible URL with {{language}}, {{month}} and {{day}}. Originals are cached independently; translation follows the software language using the selected provider.",
   "settings.calendar.history_preload.label": "Preload selected anniversaries automatically",
   "settings.calendar.history_preload.hint": "Check nearby dates at startup and periodically. Fill missing or expired caches only; translation uses the selected provider quota.",
-  "settings.calendar.history_preload_days.label": "Preload days before and after today (each side)",
   "settings.calendar.history_preload_minutes.label": "Preload check interval (minutes)",
-  "settings.appearance.language.ru-RU": "Русский"
+  "settings.appearance.language.ru-RU": "Русский",
+  "settings.calendar.history_preload_before.label": "Days before today",
+  "settings.calendar.history_preload_after.label": "Days after today",
+  "settings.group.general": "General settings",
+  "settings.group.features": "Feature settings",
+  "settings.group.services": "Services and data"
 }

@@ -20,7 +20,7 @@ class Configuration(QObject):
     def __init__(self):
         super().__init__()
         self.values = dict(history_enabled=True, history_limit=10, history_preload=True,
-                           history_preload_days=7, history_preload_minutes=60,
+                           history_preload_before=7, history_preload_after=7, history_preload_minutes=60,
                            history_url='https://en.wikipedia.org/{month}/{day}', timeout_seconds=10)
 
     def get(self, key):
@@ -139,12 +139,38 @@ class PreloadTests(unittest.TestCase):
         self.assertFalse(self.service.state.busy)
         self.assertEqual(self.service.state.status.key, 'calendar.history.cached')
 
+    def test_on_demand_date_survives_navigation_and_is_reused_without_preload(self):
+        self.configuration.values['history_preload'] = False
+        self.service.load(self.today)
+        key = next(iter(self.service._background))
+        query = self.service._current
+        self.service.suspend()
+        self.service.load(self.today + timedelta(days=1))
+        self.service.load(self.today)
+        self.assertNotIn(key, self.tasks.cancelled)
+        self.assertEqual(sum(item.key == query.key for _, item in self.service._background.values()), 1)
+        self.service.suspend()
+        self.tasks.finish(key, self.snapshot(query))
+        self.assertIsNotNone(self.repo.read(query))
+        self.service.load(self.today)
+        self.assertFalse(self.service.state.busy)
+
+    def test_asymmetric_preload_defaults_include_four_dates(self):
+        self.configuration.values.update(history_preload_before=1, history_preload_after=2)
+        self.configuration.changed.emit('calendar')
+        self.start()
+        queries = self.drain()
+        self.assertEqual({(q.month, q.day) for q in queries},
+                         {((self.today + timedelta(days=i)).month, (self.today + timedelta(days=i)).day)
+                          for i in range(-1, 3)})
+
     def test_foreground_missing_date_still_fetches_and_preloader_does_not_duplicate_it(self):
         self.service.load(self.today)
         query = self.service._current
         self.start()
-        self.assertNotIn(query.key, [item.key for _, item in self.service._background.values()])
-        self.tasks.finish(TASK_KEY, self.snapshot(query))
+        self.assertEqual(sum(item.key == query.key for _, item in self.service._background.values()), 1)
+        key = next(k for k, (_, item) in self.service._background.items() if item.key == query.key)
+        self.tasks.finish(key, self.snapshot(query))
         self.assertEqual(self.service.state.key, query.key)
         self.assertFalse(self.service.state.busy)
 
@@ -159,7 +185,7 @@ class PreloadTests(unittest.TestCase):
         self.tasks.finish(key, self.snapshot(query))
         self.assertNotIn(query.key, self.service._memo)
         self.service.load(self.today)
-        self.assertIn(TASK_KEY, self.tasks.jobs)
+        self.assertTrue(any(k.startswith("calendar.history.date.") for k in self.tasks.jobs))
 
     def test_language_switch_discards_old_results_and_preloads_new_target(self):
         self.start()
@@ -215,7 +241,7 @@ class PreloadTests(unittest.TestCase):
 
     def test_real_background_tasks_share_frontend_request_and_complete_cleanly(self):
         from PySide6.QtTest import QTest
-        self.configuration.values['history_preload_days'] = 1
+        self.configuration.values.update(history_preload_before=1, history_preload_after=1)
         tasks = TaskRunner()
         service = HistoryService(tasks, self.configuration, self.repo, self.texts)
         try:

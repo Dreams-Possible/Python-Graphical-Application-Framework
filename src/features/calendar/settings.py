@@ -9,6 +9,10 @@ def migrate_calendar_settings(version, values):
             values["history_limit"] = 5
     if version < 3 and values.get("history_limit") == 5:
         values["history_limit"] = 10
+    if version < 4:
+        old = values.pop("history_preload_days", None)
+        values.setdefault("history_preload_before", old if old is not None else 1)
+        values.setdefault("history_preload_after", old if old is not None else 2)
     return values
 
 
@@ -18,7 +22,8 @@ SECTION = SettingsSection("calendar", "settings.calendar.title", "settings.calen
     Field("history_enabled", "settings.calendar.history_enabled.label", "bool"),
     Field("history_limit", "settings.calendar.history_limit.label", "int", 1, 100),
     Field("history_preload", "settings.calendar.history_preload.label", "bool", hint_key="settings.calendar.history_preload.hint"),
-    Field("history_preload_days", "settings.calendar.history_preload_days.label", "int", 0, 30),
+    Field("history_preload_before", "settings.calendar.history_preload_before.label", "int", 0, 30),
+    Field("history_preload_after", "settings.calendar.history_preload_after.label", "int", 0, 30),
     Field("history_preload_minutes", "settings.calendar.history_preload_minutes.label", "int", 5, 1440),
     Field("history_url", "settings.calendar.history_url.label", hint_key="settings.calendar.history_url.hint"),
     Field("timeout_seconds", "settings.calendar.timeout_seconds.label", "int", 2, 30),

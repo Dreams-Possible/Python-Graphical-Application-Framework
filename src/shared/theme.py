@@ -152,14 +152,17 @@ QListWidget#LocationResults { background: $surface; color: $text; border: 1px so
 QListWidget#LocationResults::item { padding: 9px 12px; border-radius: 5px; }
 QListWidget#LocationResults::item:hover { background: $hover; }
 QListWidget#LocationResults::item:selected { background: $selected; color: $accent; }
+QLabel#SettingsGroupTitle { color: $muted; font-size: 13px; font-weight: 600; }
 QListWidget#SettingsCategories { background: transparent; border: 0; outline: 0; }
 QListWidget#SettingsCategories::item { padding: 0 12px;
-    margin: 0 0 ${navigation_gap}px 0; border: 1px solid transparent; border-radius: 8px; }
+    margin: 0 0 2px 0; border: 1px solid transparent; border-radius: 8px; }
 QListWidget#SettingsCategories::item:hover { background: $hover; }
 QListWidget#SettingsCategories::item:selected { background: $selected; color: $accent; font-weight: 600; }
 QListWidget#SettingsCategories:focus::item:selected { border-color: $accent; }
 QScrollArea { border: 0; background: transparent; }
 QWidget#SettingsForm { background: $surface; border-radius: 10px; }
+QWidget#SettingsRow { background: $surface; }
+QWidget#SettingsRow[alternate="true"] { background: $alternate; }
 QScrollBar:vertical { background: $background; width: 10px; margin: 0; }
 QScrollBar:horizontal { background: $background; height: 10px; margin: 0; }
 QScrollBar::handle { background: $handle; border-radius: 4px; min-width: 24px; min-height: 24px; }

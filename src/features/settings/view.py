@@ -5,13 +5,14 @@ from src.shared.errors import error_message
 import logging
 
 from PySide6.QtCore import QSignalBlocker, QSize, Qt, QUrl
+from src.shared.settings_form import SettingsForm
 from src.shared.ui_metrics import UI
 from src.shared.gestures import KineticScrollArea
 from src.shared.localization import message
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QMessageBox, QPushButton, QScrollArea, QSpinBox, QStackedWidget,
+    QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFrame, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QSpinBox, QStackedWidget,
     QVBoxLayout, QWidget,
 )
 
@@ -42,9 +43,41 @@ class SettingsView(QWidget):
         self.categories.setItemDelegate(NavigationDelegate(self.categories))
         self.categories.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.categories.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.categories.addItems([texts.get(section.title_key) for section in registry.sections] + [texts.get("settings.local_files")])
-        for index in range(self.categories.count()):
-            self.categories.item(index).setSizeHint(QSize(0, UI.navigation_height))
+        groups = (("general", ("appearance", "app")),
+                  ("features", ("clock", "weather", "calendar")),
+                  ("services", ("translation", "logging", "location", "local_files")))
+        self._category_keys = []
+        self._group_items = []
+        available = {section.key: section for section in registry.sections}
+        for group, keys in groups:
+            header = QListWidgetItem()
+            header.setFlags(Qt.ItemFlag.NoItemFlags)
+            header.setSizeHint(QSize(0, UI.settings_group_height + (UI.settings_group_gap if self._group_items else 0)))
+            self.categories.addItem(header)
+            group_header = QWidget()
+            group_header.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            header_layout = QVBoxLayout(group_header)
+            header_layout.setContentsMargins(0, UI.settings_group_gap if self._group_items else 0, 0, 6)
+            header_layout.setSpacing(4)
+            group_label = plain_label(name="SettingsGroupTitle")
+            group_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+            texts.bind_text(group_label, "settings.group." + group)
+            header_layout.addWidget(group_label)
+            line = QFrame()
+            line.setObjectName("Divider")
+            line.setFixedSize(UI.settings_group_line_width, 1)
+            header_layout.addWidget(line)
+            self.categories.setItemWidget(header, group_header)
+            self._category_keys.append(None)
+            self._group_items.append((header, group))
+            for key in keys:
+                if key != "local_files" and key not in available:
+                    continue
+                title = available[key].title_key if key != "local_files" else "settings.local_files"
+                item = QListWidgetItem(texts.get(title))
+                item.setSizeHint(QSize(0, UI.navigation_height))
+                self.categories.addItem(item)
+                self._category_keys.append(key)
         self.pages = QStackedWidget()
         form_page = QWidget()
         form_layout = QVBoxLayout(form_page)
@@ -78,18 +111,21 @@ class SettingsView(QWidget):
         body.addWidget(self.pages, 1)
         layout.addLayout(body, 1)
         self.categories.currentRowChanged.connect(self._select)
-        self.categories.setCurrentRow(0)
+        self.categories.setCurrentRow(1)
         texts.changed.connect(self.retranslate)
 
     def _select(self, index: int) -> None:
-        if index == len(self.registry.sections):
+        if index < 0 or index >= len(self._category_keys):
+            return
+        key = self._category_keys[index]
+        if key is None:
+            return
+        if key == "local_files":
             self.pages.setCurrentIndex(1)
             self.storage.model.refresh()
             return
-        if index < 0:
-            return
         self.pages.setCurrentIndex(0)
-        section = self.registry.sections[index]
+        section = self.registry.section(key)
         self._key = section.key
         LOGGER.debug("打开设置分类：%s", section.key)
         path = self.configuration.repository.directory / f"{section.key}.json"
@@ -100,11 +136,7 @@ class SettingsView(QWidget):
         self._editors = {}
         content = QWidget()
         content.setObjectName("SettingsForm")
-        form = QFormLayout(content)
-        form.setContentsMargins(16, 20, 16, 20)
-        form.setSpacing(16)
-        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form = SettingsForm(content)
         if section.key == "location":
             self._location_form = form
         if section.key == "translation":
@@ -168,9 +200,10 @@ class SettingsView(QWidget):
 
     def retranslate(self):
         blocker = QSignalBlocker(self.categories)
-        for index, section in enumerate(self.registry.sections):
-            self.categories.item(index).setText(self.texts.get(section.title_key))
-        self.categories.item(len(self.registry.sections)).setText(self.texts.get("settings.local_files"))
+        for index, key in enumerate(self._category_keys):
+            if key:
+                title = self.registry.section(key).title_key if key != "local_files" else "settings.local_files"
+                self.categories.item(index).setText(self.texts.get(title))
         if not self._key:
             return
         for field in self.registry.section(self._key).fields:

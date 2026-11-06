@@ -43,9 +43,10 @@ class Tasks(QObject):
     def is_active(self, key):
         return key in self.jobs
     def finish(self, result=None, error="", cancelled=False):
-        generation, _ = self.jobs[TASK_KEY]
-        self.completed.emit(TASK_KEY, generation, result, error, cancelled)
-        del self.jobs[TASK_KEY]
+        key = next((k for k in self.jobs if result is not None and result.query.key in k), next(iter(self.jobs)))
+        generation, _ = self.jobs[key]
+        self.completed.emit(key, generation, result, error, cancelled)
+        del self.jobs[key]
         self.activity_changed.emit(0)
 
 
@@ -101,11 +102,13 @@ class HistoryTests(unittest.TestCase):
         saved = SettingsRepository(Path(self.directory.name), registry).load("calendar")
         self.assertIn("/selected/", saved["history_url"])
         self.assertEqual(saved["history_limit"], 10)
-        self.assertEqual(json.loads(config_path.read_text(encoding="utf-8"))["schema_version"], 3)
+        self.assertEqual(json.loads(config_path.read_text(encoding="utf-8"))["schema_version"], 4)
         self.assertEqual(migrate_calendar_settings(2, {"history_limit": 5})["history_limit"], 10)
         self.assertEqual(migrate_calendar_settings(2, {"history_limit": 8})["history_limit"], 8)
         custom = {"history_url": "https://example.test/{month}/{day}", "history_limit": 8}
-        self.assertEqual(migrate_calendar_settings(1, custom.copy()), custom)
+        migrated = migrate_calendar_settings(1, custom.copy())
+        self.assertEqual({key: migrated[key] for key in custom}, custom)
+        self.assertEqual((migrated["history_preload_before"], migrated["history_preload_after"]), (1, 2))
 
     def test_anniversaries_update_with_selected_year_and_metadata_is_at_bottom(self):
         from src.features.calendar.history_view import HistoryEventsView
@@ -189,7 +192,8 @@ class HistoryTests(unittest.TestCase):
         self.assertFalse(self.service.state.busy)
         self.assertEqual(self.service.state.status.key, "calendar.history.idle")
         self.assertEqual(self.service.state.events, ())
-        self.assertNotIn(result.query.key, self.service._memo)
+        self.assertIn(result.query.key, self.service._memo)
+        self.assertIsNotNone(self.repository.read(result.query))
 
     def test_day_view_follows_software_language_and_source_is_always_english(self):
         texts = self.texts

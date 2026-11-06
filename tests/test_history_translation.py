@@ -25,9 +25,9 @@ class TranslationTests(unittest.TestCase):
                 self.assertEqual(source.call_count, 1)
                 self.assertEqual(translation.call_count, 2)
             self.assertEqual(sorted(p.relative_to(repo.cache).as_posix() for p in repo.cache.rglob('*') if p.is_file()),
-                             ['11-05/source.json', '11-05/translated.json'])
+                             ['11-05/source.json', '11-05/translated.zh-CN.json'])
             original = json.loads((repo.cache / '11-05/source.json').read_text(encoding='utf-8'))
-            translated = json.loads((repo.cache / '11-05/translated.json').read_text(encoding='utf-8'))
+            translated = json.loads((repo.cache / '11-05/translated.zh-CN.json').read_text(encoding='utf-8'))
             self.assertEqual([item['text'] for item in original['events']], ['Second event', 'First event'])
             self.assertEqual(translated['translations'], {'0': '第二条', '1': '第一条'})
             self.assertEqual(set(translated), {'schema_version', 'key', 'source_hash', 'translations'})
@@ -35,7 +35,7 @@ class TranslationTests(unittest.TestCase):
             self.assertEqual(repo.read(query).events[0].year, 2000)
             self.assertEqual(repo.read(query).events[0].original_text, 'Second event')
             translated['translations']['99'] = '不存在的条目'
-            (repo.cache / '11-05/translated.json').write_text(json.dumps(translated), encoding='utf-8')
+            (repo.cache / '11-05/translated.zh-CN.json').write_text(json.dumps(translated), encoding='utf-8')
             self.assertIsNone(repo.read(query))
 
     def test_partial_daily_result_retries_only_missing_and_limit_does_not_fork_files(self):
@@ -74,6 +74,21 @@ class TranslationTests(unittest.TestCase):
                 self.assertEqual(translate.call_args.args[0], 'Changed')
             self.assertEqual(repo.read(query).events[0].text, '新译文')
             self.assertEqual(len(list(repo.cache.rglob('*.json'))), 2)
+
+    def test_language_caches_coexist_and_success_is_saved_before_task_finishes(self):
+        with TemporaryDirectory() as directory:
+            repo = HistoryRepository(Path(directory))
+            query = HistoryQuery(11, 6, 'en', 'https://en.wikipedia.org/{month}/{day}', 5, target_language='zh-CN')
+            source = {'selected': [{'year': 2000, 'text': 'Example'}]}
+            with patch('src.features.calendar.history.get_json', return_value=source), patch.object(repo.translator, 'translate', return_value='中文'):
+                repo.fetch(query, Event())  # 不依赖服务任务完成回调即可读回成功结果。
+            russian = replace(query, target_language='ru')
+            with patch('src.features.calendar.history.get_json') as request, patch.object(repo.translator, 'translate', return_value='Пример'):
+                repo.fetch(russian, Event())
+                request.assert_not_called()
+            self.assertEqual(repo.read(query).events[0].text, '中文')
+            self.assertEqual(repo.read(russian).events[0].text, 'Пример')
+            self.assertEqual(len(list(repo.cache.rglob('*.json'))), 3)
 
     def test_chunks_are_lossless_and_fit_provider_byte_limit(self):
         text = ("An important event happened on this day. " * 35) + "世界"
