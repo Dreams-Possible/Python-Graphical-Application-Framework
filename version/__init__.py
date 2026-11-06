@@ -2,4 +2,4 @@
 
 APP_NAME = "Graphical Workbench"  # 发布产物名称。
 APP_ID = "GraphicalWorkbench"  # 稳定的用户目录标识，不随界面名称变化。
-APP_VERSION = "0.1.7"  # 定义当前应用的语义化版本号。
+APP_VERSION = "0.1.8"  # 定义当前应用的语义化版本号。

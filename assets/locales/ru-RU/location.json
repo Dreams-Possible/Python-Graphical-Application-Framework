@@ -1,0 +1,19 @@
+{
+  "location.unknown": "Текущее местоположение не определено",
+  "location.disabled": "Текущее местоположение отключено",
+  "location.manual": "Местоположение задано вручную",
+  "location.network": "Определение по сети (внешний IP)",
+  "location.looking_up": "Определение местоположения по внешнему IP…",
+  "location.applying": "Настройки местоположения изменены. Применение…",
+  "location.failed": "Не удалось определить местоположение по сети. Повторите попытку или выберите его вручную.",
+  "location.cancelled": "Отменено",
+  "location.query_required": "Введите название места",
+  "location.status": "{source}: {name} · {country} · {zone}",
+  "location.picker.placeholder": "Найдите место, например Москву, Токио или Лондон",
+  "location.picker.search": "Найти город",
+  "location.picker.credit": "Результаты Open-Meteo / GeoNames. Выберите место и сохраните настройки.",
+  "location.picker.busy": "Поиск…",
+  "location.picker.choose": "Выберите место и сохраните настройки, чтобы применить его.",
+  "location.picker.empty": "Места не найдены. Попробуйте другое название.",
+  "location.picker.filled": "Поля местоположения заполнены. Сохраните настройки, чтобы применить их."
+}

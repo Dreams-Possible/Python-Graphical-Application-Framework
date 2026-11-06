@@ -42,7 +42,7 @@
   "settings.clock.display_timezone.utc": "UTC",
   "settings.clock.show_seconds.label": "显示秒",
   "settings.weather.title": "天气",
-  "settings.weather.description": "服务地址需符合选定来源的接口协议。地点也可在天气页搜索选择。",
+  "settings.weather.description": "服务地址需符合选定来源的接口协议。当前天气使用统一位置，搜索天气独立显示。",
   "settings.weather.provider.label": "天气来源",
   "settings.weather.forecast_url.label": "天气接口地址",
   "settings.weather.geocoding_url.label": "地点搜索地址",
@@ -62,7 +62,7 @@
   "settings.calendar.international_url.label": "国际公共假日地址（包含 {{year}}/{{country}}）",
   "settings.calendar.timeout_seconds.label": "请求超时（秒）",
   "settings.location.title": "当前位置",
-  "settings.location.description": "独立于天气城市。网络模式按请求出口 IP 定位，代理可能改变结果；手动模式可搜索城市后保存。日历始终使用此位置的国家。",
+  "settings.location.description": "当前天气、时钟与日历共用的位置；搜索天气保持独立。网络模式按出口 IP 定位，代理可能改变结果；手动模式可搜索城市后保存。",
   "settings.location.enabled.label": "启用当前位置",
   "settings.location.mode.label": "位置来源",
   "settings.location.mode.network": "网络定位（出口 IP）",
@@ -110,9 +110,10 @@
   "settings.calendar.history_language.en": "英文维基百科",
   "settings.calendar.history_limit.label": "精选周年最多显示条数",
   "settings.calendar.history_url.label": "历史事件接口地址",
-  "settings.calendar.history_url.hint": "英文 WikiFeed 兼容地址，包含 {{language}}、{{month}}、{{day}}。中文界面使用 MyMemory 机器翻译（匿名每天 5000 字符）；其余显示英文原文。",
+  "settings.calendar.history_url.hint": "英文 WikiFeed 兼容地址，包含 {{language}}、{{month}}、{{day}}。原文独立缓存；翻译跟随软件语言并使用所选服务。",
   "settings.calendar.history_preload.label": "自动预加载精选周年",
-  "settings.calendar.history_preload.hint": "启动后及定时检查今天前后日期，仅补齐缺失或过期缓存；中文翻译会使用所选服务的额度。",
+  "settings.calendar.history_preload.hint": "启动后及定时检查今天前后日期，仅补齐缺失或过期缓存；翻译会使用所选服务的额度。",
   "settings.calendar.history_preload_days.label": "预加载前后天数（每侧）",
-  "settings.calendar.history_preload_minutes.label": "预加载检查间隔（分钟）"
+  "settings.calendar.history_preload_minutes.label": "预加载检查间隔（分钟）",
+  "settings.appearance.language.ru-RU": "Русский"
 }

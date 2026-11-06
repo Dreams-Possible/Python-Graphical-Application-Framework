@@ -5,7 +5,7 @@ from src.shared.configuration import SettingField as Field, SettingsRegistry, Se
 
 def register_application(registry: SettingsRegistry) -> None:
     registry.register(SettingsSection("appearance", "settings.appearance.title", "settings.appearance.description", (
-        Field("language", "settings.appearance.language.label", "choice", choices=(("system", "settings.appearance.language.system"), ("zh-CN", "settings.appearance.language.zh-CN"), ("en-US", "settings.appearance.language.en-US"))),
+        Field("language", "settings.appearance.language.label", "choice", choices=(("system", "settings.appearance.language.system"), ("zh-CN", "settings.appearance.language.zh-CN"), ("en-US", "settings.appearance.language.en-US"), ("ru-RU", "settings.appearance.language.ru-RU"))),
         Field("theme", "settings.appearance.theme.label", "choice", choices=(("system", "settings.appearance.theme.system"), ("light", "settings.appearance.theme.light"), ("dark", "settings.appearance.theme.dark"))),
     )))
     registry.register(SettingsSection("app", "settings.app.title", "settings.app.description", (

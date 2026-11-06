@@ -1,0 +1,16 @@
+{
+  "common.unavailable": "—",
+  "common.save": "Сохранить настройки",
+  "common.cancel": "Отмена",
+  "common.close": "Закрыть",
+  "common.today": "Сегодня",
+  "common.language": "Язык приложения",
+  "common.language.system": "Как в системе",
+  "common.language.zh-CN": "简体中文",
+  "common.language.en-US": "English",
+  "common.application": "Панель дня",
+  "common.format.short_date": "dd.MM",
+  "common.format.time": "HH:mm:ss",
+  "common.format.time_minutes": "HH:mm",
+  "common.swipe_pages_hint": "Проведите по странице влево или вправо. Графики и поля ввода сохраняют собственные жесты."
+}

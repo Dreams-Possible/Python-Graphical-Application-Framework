@@ -169,6 +169,7 @@ class LocalizationTests(unittest.TestCase):
                         settings.categories.setCurrentRow(i)
                         texts.set_language("zh-CN")
                         texts.set_language("en-US")
+                        texts.set_language("ru-RU")
                     self.assertEqual(texts._missing, set())
                     calendar_section = settings.registry.section("calendar")
                     self.assertNotIn("history_language", [field.key for field in calendar_section.fields])
