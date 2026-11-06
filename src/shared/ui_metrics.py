@@ -22,6 +22,8 @@ class UiMetrics:
     about_height: int = 310
     about_brand_size: int = 64
     about_margin: int = 32
+    file_preview_width: int = 800
+    file_preview_height: int = 560
     page_slide_ms: int = 260
     swipe_distance_ratio: float = 0.22
     swipe_min_distance: int = 48

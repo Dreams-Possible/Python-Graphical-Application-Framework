@@ -28,5 +28,7 @@
   "translation.failure.quota": "{provider} quota or rate limit reached ({code}). Retry later or check your quota.",
   "translation.failure.timeout": "{provider} timed out ({code}). Check the network before retrying.",
   "translation.failure.invalid_response": "{provider} returned an invalid translation ({code}). The result was not cached.",
-  "translation.failure.request_failed": "{provider} translation failed ({code}). Check the network, endpoint and language support."
+  "translation.failure.request_failed": "{provider} translation failed ({code}). Check the network, endpoint and language support.",
+  "settings.translation.max_workers": "Maximum concurrent requests",
+  "settings.translation.max_workers_hint": "Default: 10. Range: 1–10. Native batches count as requests; lower this value if rate limited."
 }

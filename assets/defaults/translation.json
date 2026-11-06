@@ -3,6 +3,7 @@
   "values": {
     "provider": "mymemory",
     "timeout_seconds": 10,
+    "max_workers": 10,
     "mymemory_url": "https://api.mymemory.translated.net/get",
     "google_url": "https://translation.googleapis.com/language/translate/v2",
     "google_key": "",

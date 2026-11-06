@@ -186,7 +186,7 @@ class SettingsView(QWidget):
             return
         provider = self._editors["provider"].currentData()
         for key, editor in self._editors.items():
-            if key not in ("provider", "timeout_seconds"):
+            if key not in ("provider", "timeout_seconds", "max_workers"):
                 self._translation_form.setRowVisible(editor, key.startswith(provider + "_"))
         self.texts.bind_text(self.translation_hint, "translation.hint." + provider)
 

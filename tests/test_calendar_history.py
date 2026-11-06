@@ -19,7 +19,7 @@ class Configuration(QObject):
     changed = Signal(str)
     def __init__(self):
         super().__init__()
-        self.values = dict(history_enabled=True, history_language="zh", history_limit=5,
+        self.values = dict(history_enabled=True, history_language="zh", history_limit=10,
             history_url="https://{language}.wikipedia.org/api/rest_v1/feed/onthisday/events/{month}/{day}", timeout_seconds=10)
     def get(self, key):
         return self.values.copy()
@@ -72,9 +72,9 @@ class HistoryTests(unittest.TestCase):
             {"year": 2024, "text": "Recent event", "pages": [{"content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Example"}}}]},
             {"year": -44, "text": "An ancient event"}, {"year": 1900, "text": "An event"}]}
         events = parse_events(doc)
-        self.assertEqual([event.year for event in events], [-44, 1900, 2024])
+        self.assertEqual([event.year for event in events], [2024, 1900, -44])
         self.assertEqual(events[1].article, "")
-        self.assertEqual(events[2].article, "https://en.wikipedia.org/wiki/Example")
+        self.assertEqual(events[0].article, "https://en.wikipedia.org/wiki/Example")
         self.assertEqual(safe_article("https://en.wikipedia.org.evil.test/"), "")
         for invalid in ({}, {"events": [{"year": True, "text": "bad"}]}, {"events": [{"year": 1900}]}):
             with self.assertRaises(ValueError):
@@ -93,15 +93,17 @@ class HistoryTests(unittest.TestCase):
         old = "https://{language}.wikipedia.org/api/rest_v1/feed/onthisday/events/{month}/{day}"
         values = migrate_calendar_settings(1, {"history_url": old, "history_limit": 20})
         self.assertIn("/selected/", values["history_url"])
-        self.assertEqual(values["history_limit"], 5)
+        self.assertEqual(values["history_limit"], 10)
         registry = SettingsRegistry()
         registry.register(SECTION)
         config_path = Path(self.directory.name) / "calendar.json"
         config_path.write_text(json.dumps({"schema_version": 1, "values": {"history_url": old, "history_limit": 20}}), encoding="utf-8")
         saved = SettingsRepository(Path(self.directory.name), registry).load("calendar")
         self.assertIn("/selected/", saved["history_url"])
-        self.assertEqual(saved["history_limit"], 5)
-        self.assertEqual(json.loads(config_path.read_text(encoding="utf-8"))["schema_version"], 2)
+        self.assertEqual(saved["history_limit"], 10)
+        self.assertEqual(json.loads(config_path.read_text(encoding="utf-8"))["schema_version"], 3)
+        self.assertEqual(migrate_calendar_settings(2, {"history_limit": 5})["history_limit"], 10)
+        self.assertEqual(migrate_calendar_settings(2, {"history_limit": 8})["history_limit"], 8)
         custom = {"history_url": "https://example.test/{month}/{day}", "history_limit": 8}
         self.assertEqual(migrate_calendar_settings(1, custom.copy()), custom)
 
@@ -145,6 +147,22 @@ class HistoryTests(unittest.TestCase):
         self.tasks.finish(self.snapshot(self.service._current))
         self.assertEqual(len(self.service.state.events), 1)
         self.assertFalse(self.service.state.busy)
+
+    def test_partial_translation_cache_is_retried_even_when_source_is_fresh(self):
+        from dataclasses import replace
+        self.texts.set_language('zh-CN')
+        query = HistoryQuery(11, 5, 'en', self.configuration.values['history_url'], 10, target_language='zh')
+        self.repository.save(self.snapshot(replace(query, target_language='en')))
+        failed = HistorySnapshot(query, self.now, (HistoryEvent(2024, 'Event text',
+            'https://en.wikipedia.org/wiki/Example', 'Event text', 'failed'),))
+        self.repository.save(failed)
+        self.service.load(date(2026, 11, 5))
+        self.assertTrue(self.tasks.jobs)
+        complete = replace(failed, events=(replace(failed.events[0], text='译文', translation_status='translated'),))
+        self.tasks.finish(complete)
+        self.service.load(date(2026, 11, 5))
+        self.assertFalse(self.tasks.jobs)
+        self.assertEqual(self.service.state.events[0].text, '译文')
 
     def test_switch_to_cached_day_ignores_error_from_previous_request(self):
         query = HistoryQuery(11, 6, "en", self.configuration.values["history_url"], 10)

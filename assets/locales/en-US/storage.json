@@ -19,5 +19,13 @@
   "storage.confirm": "Clean up",
   "storage.summary.other": "{count} files, {size:.1f} KiB; displaying up to 500",
   "storage.summary.one": "{count} file, {size:.1f} KiB; displaying up to 500",
-  "storage.kib": "{value} KiB"
+  "storage.kib": "{value} KiB",
+  "storage.preview.hint": "Double-click a file to preview it.",
+  "storage.preview.title": "File preview · {name}",
+  "storage.preview.loading": "Reading file…",
+  "storage.preview.readonly": "Read-only preview. Select and copy text as needed.",
+  "storage.preview.truncated": "Large file: showing only the first 256 KiB.",
+  "storage.preview.invalid_path": "Files outside the application directory and symbolic links cannot be previewed.",
+  "storage.preview.read_failed": "Cannot read the file. It may have been deleted, locked or inaccessible.",
+  "storage.preview.unsupported": "This file is not a supported text format and cannot be previewed."
 }

@@ -1,7 +1,7 @@
 """按月日查询维基历史事件；后台请求、单任务合并与按来源缓存。"""
 from dataclasses import dataclass, field, replace
 from src.features.translation.service import Translator, TranslationOptions
-from src.shared.tasks import TaskCancelled
+from src.shared.tasks import check_cancelled
 from datetime import date
 from hashlib import sha256
 import json
@@ -26,6 +26,7 @@ class HistoryEvent:
     text: str
     article: str = ""
     original_text: str = ""
+    translation_status: str = ""
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,7 @@ class HistoryQuery:
     template: str
     timeout: int
     target_language: str = "en"
-    limit: int = 5
+    limit: int = 10
     refresh: bool = field(default=False, compare=False)
     translation: TranslationOptions = field(default_factory=lambda: TranslationOptions.from_values({}), repr=False)
 
@@ -56,6 +57,11 @@ class HistorySnapshot:
     query: HistoryQuery
     fetched_at: float
     events: tuple[HistoryEvent, ...]
+
+    @property
+    def complete(self):
+        return self.query.target_language != "zh" or all(
+            event.translation_status == "translated" for event in self.events[:self.query.limit])
 
 
 @dataclass(frozen=True)
@@ -104,8 +110,8 @@ def parse_events(document):
                 article = safe_article(desktop.get("page")) if isinstance(desktop, dict) else ""
                 if article:
                     break
-        entries.append(HistoryEvent(year, text, article, item.get("original_text", "")))
-    return tuple(sorted(entries, key=lambda entry: entry.year))
+        entries.append(HistoryEvent(year, text, article, item.get("original_text", ""), item.get("translation_status", "")))
+    return tuple(sorted(entries, key=lambda entry: entry.year, reverse=True))
 
 
 class HistoryRepository:
@@ -114,13 +120,54 @@ class HistoryRepository:
         self.now = now
         self.translator = Translator(self.cache)
 
+    def _path(self, query):
+        date(2000, query.month, query.day)
+        name = "translated.json" if query.target_language == "zh" else "source.json"
+        return self.cache / f"{query.month:02d}-{query.day:02d}" / name
+
+    def _source_key(self, query):
+        return sha256(f"{query.template}|{query.language}|{query.month:02d}-{query.day:02d}".encode()).hexdigest()
+
+    def _translation_key(self, query):
+        return self._source_key(query) + "|" + query.target_language + "|" + query.translation.signature
+
+    @staticmethod
+    def _source_hash(events):
+        values = [(event.year, event.original_text or event.text, event.article) for event in events]
+        return sha256(json.dumps(values, ensure_ascii=False).encode()).hexdigest()
+
     def read(self, query):
         try:
-            doc = json.loads((self.cache / f"{query.key}.json").read_text(encoding="utf-8"))
-            if doc["key"] != query.key or type(doc["fetched_at"]) not in (int, float):
+            doc = json.loads(self._path(query).read_text(encoding="utf-8"))
+            key = self._translation_key(query) if query.target_language == "zh" else self._source_key(query)
+            if query.target_language == "zh":
+                raw = self.read(replace(query, target_language="en"))
+                if (raw is None or doc["schema_version"] != 2 or doc["key"] != key
+                        or doc["source_hash"] != self._source_hash(raw.events)):
+                    return None
+                translations = doc["translations"]
+                if not isinstance(translations, dict):
+                    return None
+                valid_indices = {str(i) for i in range(len(raw.events))}
+                for index, text in translations.items():
+                    if index not in valid_indices or not isinstance(text, str) or not text.strip():
+                        return None
+                # 原文、年份、来源链接只从英文集合读取；缺失译文自动视为待补齐。
+                events = tuple(replace(event, text=translations.get(str(index), event.text), original_text=event.text,
+                                       translation_status="translated" if str(index) in translations else "pending")
+                               for index, event in enumerate(raw.events))
+                return HistorySnapshot(query, raw.fetched_at, events)
+            if doc["schema_version"] != 1 or doc["key"] != key or type(doc["fetched_at"]) not in (int, float):
                 return None
-            events = parse_events({"events": [{"year": item["year"], "text": item["text"], "original_text": item.get("original_text", ""),
-                "pages": [{"content_urls": {"desktop": {"page": item.get("article", "")}}}]} for item in doc["events"]]})
+            events = []
+            for item in doc["events"]:
+                if type(item["year"]) is not int or not isinstance(item["text"], str) or not item["text"].strip():
+                    return None
+                if not isinstance(item.get("original_text", ""), str):
+                    return None
+                events.append(HistoryEvent(item["year"], item["text"], safe_article(item.get("article", "")),
+                                          item.get("original_text", ""), item.get("translation_status", "")))
+            events = tuple(sorted(events, key=lambda entry: entry.year, reverse=True))
             return HistorySnapshot(query, doc["fetched_at"], events)
         except (OSError, ValueError, KeyError, TypeError):
             return None
@@ -135,27 +182,48 @@ class HistoryRepository:
             self.save(raw)
         events = raw.events
         if query.target_language == "zh":
-            translated, failed = [], False
-            for event in events[:query.limit]:
-                try:
-                    text = self.translator.translate(event.text, query.timeout, stop, query.translation) if not failed else event.text
-                except TaskCancelled:
-                    raise
-                except Exception:
-                    LOGGER.warning("History translation failed; retaining English", exc_info=True)
-                    failed, text = True, event.text
-                translated.append(replace(event, text=text, original_text=event.text))
-            events = tuple(translated) + events[query.limit:]
+            # 一天作为一个翻译任务与缓存单元；仅补齐当前显示范围内缺失的译文。
+            cached = self.read(query)
+            translated, missing = [], []
+            for index, event in enumerate(events):
+                check_cancelled(stop)
+                previous = cached.events[index] if cached else None
+                if previous and previous.translation_status == "translated":
+                    translated.append(previous)
+                    continue
+                translated.append(replace(event, original_text=event.text, translation_status="pending"))
+                if index < query.limit:
+                    missing.append(index)
+            results = self.translator.translate_many([events[index].text for index in missing], query.timeout, stop,
+                query.translation, source_language="en", target_language="zh-CN", use_cache=False)
+            for index, result in zip(missing, results):
+                if result.succeeded:
+                    translated[index] = replace(translated[index], text=result.text, translation_status="translated")
+                elif result.error:
+                    LOGGER.warning("历史事件翻译失败，保留原文：%s", getattr(result.error, "reason", type(result.error).__name__))
+                    translated[index] = replace(translated[index], translation_status="failed")
+            events = tuple(translated)
+        check_cancelled(stop)
         return HistorySnapshot(query, raw.fetched_at, events)
 
     def save(self, snapshot):
-        doc = {"key": snapshot.query.key, "fetched_at": snapshot.fetched_at,
-               "events": [{"year": entry.year, "text": entry.text, "article": entry.article, "original_text": entry.original_text} for entry in snapshot.events]}
+        translated = snapshot.query.target_language == "zh"
+        if translated:
+            doc = {"schema_version": 2, "key": self._translation_key(snapshot.query),
+                   "source_hash": self._source_hash(snapshot.events),
+                   "translations": {str(index): entry.text for index, entry in enumerate(snapshot.events)
+                                    if entry.translation_status == "translated"}}
+        else:
+            doc = {"schema_version": 1, "key": self._source_key(snapshot.query),
+                   "month_day": f"{snapshot.query.month:02d}-{snapshot.query.day:02d}",
+                   "source_language": snapshot.query.language, "fetched_at": snapshot.fetched_at,
+                   "events": [{"year": entry.year, "text": entry.text, "article": entry.article}
+                              for entry in snapshot.events]}
         try:
-            self.cache.mkdir(parents=True, exist_ok=True)
-            target = self.cache / f"{snapshot.query.key}.json"
+            target = self._path(snapshot.query)
+            target.parent.mkdir(parents=True, exist_ok=True)
             temporary = target.with_suffix(".tmp")
-            temporary.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+            temporary.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             temporary.replace(target)
         except OSError:
             LOGGER.warning("History cache could not be saved", exc_info=True)
@@ -188,7 +256,7 @@ class HistoryService(QObject):
 
     def _publish(self, query, snapshot, status, busy=False):
         events = snapshot.events[:self._values["history_limit"]] if snapshot else ()
-        if not busy and query and query.target_language == "zh" and any(event.original_text and event.original_text == event.text for event in events):
+        if not busy and query and query.target_language == "zh" and any(event.translation_status in ("failed", "pending") for event in events):
             status = message("calendar.history.translation_partial")
         state = HistoryState(query.key if query else "", events, status, busy, query.target_language if query else ("zh" if self.texts.language == "zh-CN" else "en"), len(snapshot.events) if snapshot else 0)
         if state != self.state:
@@ -214,7 +282,7 @@ class HistoryService(QObject):
         if not force and self._current == query and self._generation >= 0 and self.tasks.is_active(TASK_KEY):
             return
         age = self.repository.now() - snapshot.fetched_at if snapshot else None
-        if not force and snapshot and 0 <= age < CACHE_SECONDS:
+        if not force and snapshot and snapshot.complete and 0 <= age < CACHE_SECONDS:
             if self.tasks.is_active(TASK_KEY):
                 self.tasks.cancel(TASK_KEY)
                 self._generation = -1

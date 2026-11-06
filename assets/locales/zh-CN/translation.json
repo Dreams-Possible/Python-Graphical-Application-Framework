@@ -28,5 +28,7 @@
   "translation.failure.quota": "{provider} 额度不足或请求过于频繁（{code}），请稍后重试或检查额度。",
   "translation.failure.timeout": "{provider} 请求超时（{code}），请检查网络后重试。",
   "translation.failure.invalid_response": "{provider} 返回无效译文（{code}），本次结果未缓存。",
-  "translation.failure.request_failed": "{provider} 翻译请求失败（{code}），请检查网络、接口及语言支持。"
+  "translation.failure.request_failed": "{provider} 翻译请求失败（{code}），请检查网络、接口及语言支持。",
+  "settings.translation.max_workers": "最大并发请求数",
+  "settings.translation.max_workers_hint": "默认 10，范围 1–10。批量接口按请求组计数；出现限流可调低。"
 }

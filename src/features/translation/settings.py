@@ -6,6 +6,8 @@ PROVIDERS = ("mymemory", "google", "baidu", "youdao", "libre")
 SECTION = SettingsSection("translation", "settings.translation.title", "settings.translation.description", (
     Field("provider", "settings.translation.provider", "choice", choices=tuple((key, "translation.provider." + key) for key in PROVIDERS)),
     Field("timeout_seconds", "settings.translation.timeout", "int", 2, 60),
+    Field("max_workers", "settings.translation.max_workers", "int", 1, 10,
+          hint_key="settings.translation.max_workers_hint"),
     Field("mymemory_url", "settings.translation.endpoint"),
     Field("google_url", "settings.translation.endpoint"),
     Field("google_key", "settings.translation.api_key", "secret"),

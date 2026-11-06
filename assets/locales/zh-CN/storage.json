@@ -19,5 +19,13 @@
   "storage.confirm": "清理",
   "storage.summary.other": "共 {count} 个文件，{size:.1f} KiB；最多展示 500 个",
   "storage.summary.one": "共 {count} 个文件，{size:.1f} KiB；最多展示 500 个",
-  "storage.kib": "{value} KiB"
+  "storage.kib": "{value} KiB",
+  "storage.preview.hint": "双击文件可弹窗预览。",
+  "storage.preview.title": "文件预览 · {name}",
+  "storage.preview.loading": "正在读取文件…",
+  "storage.preview.readonly": "只读预览，可选择并复制文本。",
+  "storage.preview.truncated": "文件较大，仅预览前 256 KiB。",
+  "storage.preview.invalid_path": "无法预览应用目录之外的文件或符号链接。",
+  "storage.preview.read_failed": "文件无法读取，可能已被删除、占用或无访问权限。",
+  "storage.preview.unsupported": "此文件不是受支持的文本格式，暂不支持预览。"
 }

@@ -7,19 +7,28 @@ from src.shared.errors import ui_error
 from dataclasses import dataclass
 from src.shared.messages import message
 from datetime import datetime
+import json
 import logging
 from pathlib import Path
 from threading import Event
 
 from PySide6.QtCore import QSignalBlocker, QObject, Signal, Slot, QUrl, Qt
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QDialog, QHBoxLayout, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 from src.shared.paths import UserPaths
 from src.shared.tasks import TaskRunner, check_cancelled
+from src.shared.ui_metrics import UI
 from src.shared.widgets import choice_box, data_table, plain_label, populate, text_button, text_label
 
 LOGGER = logging.getLogger("workbench.storage")
+PREVIEW_BYTES = 256 * 1024
+
+
+@dataclass(frozen=True)
+class FilePreview:
+    text: str
+    truncated: bool
 
 
 @dataclass(frozen=True)
@@ -40,6 +49,39 @@ class StorageRepository:
     def __init__(self, paths: UserPaths, current_log: Path) -> None:
         self.directories = {"config": paths.config, "data": paths.data, "cache": paths.cache, "logs": paths.logs}
         self.current_log = current_log
+
+    def preview(self, category: str, name: str, cancelled: Event) -> FilePreview:
+        root = self.directories[category].resolve()
+        path = root / name
+        if Path(name).is_absolute() or path.is_symlink() or not path.resolve().is_relative_to(root):
+            raise ui_error(ValueError, "storage.preview.invalid_path")
+        check_cancelled(cancelled)
+        try:
+            with path.open("rb") as stream:
+                raw = stream.read(PREVIEW_BYTES + 1)
+        except OSError:
+            raise ui_error(OSError, "storage.preview.read_failed") from None
+        check_cancelled(cancelled)
+        truncated = len(raw) > PREVIEW_BYTES
+        raw = raw[:PREVIEW_BYTES]
+        # 不按扩展名盲目显示二进制；截断时增量解码避免切断多字节字符。
+        import codecs
+        encodings = ("utf-16",) if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else ("utf-8-sig", "gb18030")
+        text = None
+        for encoding in encodings:
+            try:
+                text = codecs.getincrementaldecoder(encoding)().decode(raw, final=not truncated)
+                break
+            except UnicodeError:
+                continue
+        if text is None or any(ord(char) < 32 and char not in "\n\r\t" for char in text):
+            raise ui_error(ValueError, "storage.preview.unsupported")
+        if path.suffix.lower() == ".json" and not truncated:
+            try:
+                text = json.dumps(json.loads(text), ensure_ascii=False, indent=2)
+            except (ValueError, RecursionError):
+                pass  # 无效 JSON 仍允许核对原始文本。
+        return FilePreview(text, truncated)
 
     def _files(self, category: str, cancelled: Event):
         root = self.directories[category]
@@ -134,6 +176,8 @@ class StorageView(QWidget):
         self.texts = texts
         self._snapshot = None
         self._clear_dialog = None
+        self._preview_dialog = None
+        self._snapshot_category = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.category = choice_box()
@@ -155,6 +199,8 @@ class StorageView(QWidget):
         layout.addWidget(self.path)
         layout.addWidget(self.status)
         self.table = data_table(tuple(texts.get(key) for key in ("storage.file", "storage.size", "storage.modified")))
+        self.table.cellDoubleClicked.connect(self._preview)
+        texts.bind_text(self.table, "storage.preview.hint", setter="setToolTip")
         layout.addWidget(self.table, 1)
         model.changed.connect(self.render)
         self.clear.setEnabled(False)
@@ -166,9 +212,24 @@ class StorageView(QWidget):
         self.category.setEnabled(not busy)
         self.refresh.setEnabled(not busy)
         self.clear.setEnabled(not busy and self.model.category in ("cache", "logs"))
+        self.table.setEnabled(not busy)
         if snapshot is not None:
             self._snapshot = snapshot
+            self._snapshot_category = self.model.category
             self._render_rows()
+
+    def _preview(self, row, _column):
+        if self._snapshot is None or self._snapshot_category != self.model.category or not 0 <= row < len(self._snapshot.rows):
+            return
+        if self._preview_dialog:
+            self._preview_dialog.raise_()
+            self._preview_dialog.activateWindow()
+            return
+        name = self._snapshot.rows[row].name
+        dialog = FilePreviewDialog(self.model, self.model.category, name, self.texts, self)
+        self._preview_dialog = dialog
+        dialog.finished.connect(lambda _: setattr(self, "_preview_dialog", None))
+        dialog.open()
 
     def _render_rows(self):
         if self._snapshot is not None:
@@ -214,3 +275,50 @@ class StorageView(QWidget):
             dialog.deleteLater()
         if result == QMessageBox.StandardButton.Yes and self.model.category == category:
             self.model.refresh(clear=True)
+
+
+class FilePreviewDialog(QDialog):
+    """只读纯文本弹窗；独立后台任务避免阻塞文件列表及污染扫描结果。"""
+    def __init__(self, model, category, name, texts, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.resize(UI.file_preview_width, UI.file_preview_height)
+        self.texts, self.tasks = texts, model.tasks
+        self._task_key = f"storage.preview.{id(self)}"
+        self._generation = -1
+        texts.bind_text(self, "storage.preview.title", setter="setWindowTitle", name=name)
+        layout = QVBoxLayout(self)
+        path = plain_label(str(model.repository.directories[category] / name), "Muted")
+        path.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(path)
+        self.status = text_label(texts, "storage.preview.loading", "Muted")
+        layout.addWidget(self.status)
+        self.content = QPlainTextEdit()
+        self.content.setReadOnly(True)
+        self.content.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        layout.addWidget(self.content, 1)
+        close = text_button(texts, "common.close")
+        close.clicked.connect(self.reject)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        actions.addWidget(close)
+        layout.addLayout(actions)
+        self.tasks.completed.connect(self._completed)
+        self.finished.connect(self._finish)
+        try:
+            self._generation = self.tasks.submit(self._task_key, lambda stop: model.repository.preview(category, name, stop))
+        except RuntimeError as error:
+            texts.set_text(self.status, error_message(error))
+
+    def _completed(self, key, generation, result, error, cancelled):
+        if key != self._task_key or generation != self._generation:
+            return
+        if error or cancelled:
+            self.texts.set_text(self.status, message("storage.cancelled") if cancelled else error)
+            return
+        self.content.setPlainText(result.text)
+        self.texts.bind_text(self.status, "storage.preview.truncated" if result.truncated else "storage.preview.readonly")
+
+    def _finish(self, _):
+        self._generation = -1
+        self.tasks.cancel(self._task_key)

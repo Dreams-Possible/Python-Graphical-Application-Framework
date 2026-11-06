@@ -7,6 +7,8 @@ def migrate_calendar_settings(version, values):
         values["history_url"] = old_default.replace("/events/", "/selected/")
         if values.get("history_limit") == 20:
             values["history_limit"] = 5
+    if version < 3 and values.get("history_limit") == 5:
+        values["history_limit"] = 10
     return values
 
 

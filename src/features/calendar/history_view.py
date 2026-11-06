@@ -80,7 +80,7 @@ class HistoryEventsView(QWidget):
             content.setSpacing(8)
             content.addWidget(plain_label(event.text))
             if event.original_text:
-                note = text_label(self.texts, "calendar.history.translated" if event.text != event.original_text else "calendar.history.translation_failed", "Muted")
+                note = text_label(self.texts, "calendar.history.translated" if event.translation_status == "translated" else "calendar.history.translation_failed", "Muted")
                 note.setToolTip(event.original_text)
                 content.addWidget(note)
             if event.article:

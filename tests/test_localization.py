@@ -176,10 +176,13 @@ class LocalizationTests(unittest.TestCase):
                     self.assertEqual(section_keys[translation_index + 1], "location")
                     settings.categories.setCurrentRow(translation_index)
                     provider = settings._editors["provider"]
+                    concurrency = settings._editors["max_workers"]
+                    self.assertEqual((concurrency.minimum(), concurrency.maximum(), concurrency.value()), (1, 10, 10))
+                    concurrency.setValue(3)
                     for value in ("mymemory", "google", "baidu", "youdao", "libre"):
                         provider.setCurrentIndex(provider.findData(value))
                         for key, control in settings._editors.items():
-                            if key not in ("provider", "timeout_seconds"):
+                            if key not in ("provider", "timeout_seconds", "max_workers"):
                                 self.assertEqual(settings._translation_form.isRowVisible(control), key.startswith(value + "_"))
                     provider.setCurrentIndex(provider.findData("google"))
                     self.assertEqual(settings._editors["google_key"].echoMode(), QLineEdit.EchoMode.Password)
@@ -188,6 +191,7 @@ class LocalizationTests(unittest.TestCase):
                     settings._editors["google_key"].setText("test-key")
                     settings._save()
                     self.assertEqual(settings.configuration.get("translation")["provider"], "google")
+                    self.assertEqual(settings.configuration.get("translation")["max_workers"], 3)
                     settings.categories.setCurrentRow(0)
                     settings._editors["language"].setCurrentIndex(settings._editors["language"].findData("en-US"))
                     settings._save()

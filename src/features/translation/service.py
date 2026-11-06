@@ -8,6 +8,9 @@ from secrets import token_hex
 from time import time
 from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+from uuid import uuid4
+import logging
 
 from src.features.translation.settings import PROVIDERS
 from src.shared.errors import ui_error
@@ -15,6 +18,20 @@ from src.shared.http import get_json, post_json
 from src.shared.messages import message
 from src.shared.paths import resource_path
 from src.shared.tasks import TaskCancelled, check_cancelled
+
+LOGGER = logging.getLogger("workbench.translation")
+
+
+@dataclass(frozen=True)
+class TranslationResult:
+    """与输入位置一一对应；未调度项 skipped，失败项 error，成功项 text。"""
+    text: str = ""
+    error: Exception | None = None
+    skipped: bool = False
+
+    @property
+    def succeeded(self):
+        return self.error is None and not self.skipped
 
 
 class TranslationError(ValueError):
@@ -82,6 +99,7 @@ class TranslationOptions:
     timeout: int = 10
     app_id: str = field(default="", repr=False)
     key: str = field(default="", repr=False)
+    max_workers: int = 10
 
     @classmethod
     def from_values(cls, values):
@@ -90,7 +108,8 @@ class TranslationOptions:
         if provider not in PROVIDERS:
             raise ui_error(ValueError, "translation.unknown_provider")
         key = merged.get(provider + "_secret", "") if provider in ("baidu", "youdao") else merged.get(provider + "_key", "")
-        return cls(provider, merged[provider + "_url"].strip(), int(merged["timeout_seconds"]), merged.get(provider + "_app_id", "").strip(), key.strip())
+        return cls(provider, merged[provider + "_url"].strip(), int(merged["timeout_seconds"]), merged.get(provider + "_app_id", "").strip(), key.strip(),
+                   max_workers=merged["max_workers"])
 
     @property
     def signature(self):
@@ -101,6 +120,8 @@ class TranslationOptions:
 
 def validate_options(options):
     supported_languages(options.provider)
+    if type(options.max_workers) is not int or not 1 <= options.max_workers <= 10:
+        raise ui_error(TranslationError, "errors.settings_invalid", field=message("settings.translation.max_workers"))
     parsed = urlsplit(options.endpoint)
     if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
         error = ui_error(TranslationError, "errors.http_url")
@@ -199,15 +220,195 @@ def request_translation(text, options, stop, *, source_language="en", target_lan
         raise _failure(reason, provider, code if code.isdigit() else "response") from None
 
 
+def request_translation_batch(texts, options, stop, source, target):
+    """仅使用供应商原生数组协议，逐项检查数量及文本，不拼接分隔符。"""
+    check_cancelled(stop)
+    _, _, source_code, target_code = _language_pair(options.provider, source, target)
+    validate_options(options)
+    try:
+        payload = {"q": texts, "source": source_code, "target": target_code, "format": "text"}
+        if options.provider == "google":
+            document = post_json(options.endpoint, payload, options.timeout, stop, headers={"X-Goog-Api-Key": options.key})
+            items = document["data"]["translations"]
+            if not isinstance(items, list):
+                raise TypeError("invalid translation list")
+            values = [item["translatedText"] for item in items]
+        elif options.provider == "libre":
+            if options.key:
+                payload["api_key"] = options.key
+            document = post_json(options.endpoint, payload, options.timeout, stop)
+            values = document["translatedText"]
+        else:
+            raise TypeError("provider has no array adapter")
+        if not isinstance(values, list) or len(values) != len(texts):
+            raise TypeError("translation count mismatch")
+        if any(not isinstance(value, str) or not html.unescape(value).strip() for value in values):
+            raise TypeError("invalid translation text")
+        check_cancelled(stop)
+        return [html.unescape(value) for value in values]
+    except TaskCancelled:
+        raise
+    except Exception as error:
+        code = str(getattr(error, "code", ""))
+        reason = "request_failed"
+        if isinstance(error, HTTPError):
+            reason = {401: "authentication", 403: "authentication", 429: "quota"}.get(error.code, reason)
+        elif isinstance(error, TimeoutError) or isinstance(error, URLError) and isinstance(error.reason, TimeoutError):
+            reason = "timeout"
+        elif isinstance(error, (KeyError, TypeError, AttributeError)):
+            reason = "invalid_response"
+        raise _failure(reason, options.provider, code if code.isdigit() else "response") from None
+
+
 class Translator:
     def __init__(self, cache):
         self.cache = cache / "translations"
 
-    def translate(self, text, timeout, stop, options=None, *, source_language="en", target_language="zh-CN"):
+    def _cache_path(self, text, options, source, target):
+        key = sha256((options.signature + "|" + source + "|" + target + "|" + text).encode()).hexdigest()
+        return self.cache / (key + ".txt")
+
+    def _read_cache(self, path):
+        try:
+            value = path.read_text(encoding="utf-8")
+            return value if value.strip() else None
+        except (OSError, UnicodeError):
+            return None
+
+    def _save_cache(self, path, value):
+        temporary = path.with_name(path.name + "." + uuid4().hex + ".tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_text(value, encoding="utf-8")
+            temporary.replace(path)
+        except OSError:
+            pass
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def translate_many(self, texts, timeout, stop, options=None, *, source_language="en", target_language="zh-CN", use_cache=True, max_workers=None):
+        """后台线程调用；原生数组组批或有限并发，按输入顺序返回 TranslationResult。
+
+        单项失败不伪装成译文；认证/配额/语言组合拒绝后停止派发新请求。
+        已在途请求无法强行终止，取消等待其超时或协作结束后抛 TaskCancelled。
+        """
+        check_cancelled(stop)
+        if isinstance(texts, str):
+            raise TypeError("texts must be a sequence of strings")
+        texts = tuple(texts)
+        if any(not isinstance(text, str) for text in texts):
+            raise TypeError("texts must contain strings")
+        options = options or TranslationOptions.from_values({"timeout_seconds": timeout})
+        max_workers = options.max_workers if max_workers is None else max_workers
+        if type(max_workers) is not int or not 1 <= max_workers <= 10:
+            raise ValueError("max_workers must be between 1 and 10")
+        source, target, _, _ = _language_pair(options.provider, source_language, target_language)
+        results, missing = [None] * len(texts), []
+        for index, text in enumerate(texts):
+            if not text.strip() or source == target:
+                results[index] = TranslationResult(text)
+                continue
+            cached = self._read_cache(self._cache_path(text, options, source, target)) if use_cache else None
+            if cached is not None:
+                results[index] = TranslationResult(cached)
+            else:
+                missing.append(index)
+        if not missing:
+            return tuple(results)
+        try:
+            validate_options(options)
+        except (ValueError, OSError) as error:
+            for index in missing:
+                results[index] = TranslationResult(error=error)
+            return tuple(results)
+
+        native = options.provider in ("google", "libre")
+        work = []
+        pieces = {}
+        if native:
+            group, size = [], 0
+            for index in missing:
+                parts = list(chunks(texts[index]))
+                pieces[index] = [None] * len(parts)
+                for position, part in enumerate(parts):
+                    # 保守的请求上限；不假定所有自建实例都有同样容量。
+                    if group and (len(group) >= 32 or size + len(part.encode()) > 4000):
+                        work.append(group)
+                        group, size = [], 0
+                    group.append((index, position, part))
+                    size += len(part.encode())
+            if group:
+                work.append(group)
+        else:
+            work = [[(index, 0, texts[index])] for index in missing]
+        LOGGER.info("翻译集合开始：服务 %s，条目 %d，待处理 %d，模式 %s，并发上限 %d，请求组 %d",
+                    options.provider, len(texts), len(missing), "batch" if native else "concurrent", max_workers, len(work))
+
+        def execute(group):
+            check_cancelled(stop)
+            if native:
+                return request_translation_batch([part for _, _, part in group], options, stop, source, target)
+            return [self.translate(group[0][2], timeout, stop, options,
+                                   source_language=source, target_language=target, use_cache=False)]
+
+        executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="translation")
+        pending, next_group, blocked = {}, 0, False
+        try:
+            while pending or next_group < len(work):
+                check_cancelled(stop)
+                while not blocked and len(pending) < max_workers and next_group < len(work):
+                    check_cancelled(stop)
+                    group = work[next_group]
+                    pending[executor.submit(execute, group)] = group
+                    next_group += 1
+                if not pending:
+                    break
+                done, _ = wait(pending, timeout=0.05, return_when=FIRST_COMPLETED)
+                for future in done:
+                    group = pending.pop(future)
+                    try:
+                        values = future.result()
+                        for (index, position, _), value in zip(group, values):
+                            if native:
+                                pieces[index][position] = value
+                            else:
+                                results[index] = TranslationResult(value)
+                    except TaskCancelled:
+                        raise
+                    except Exception as error:
+                        if not isinstance(error, TranslationError):
+                            error = _failure("request_failed", options.provider)
+                        for index, _, _ in group:
+                            results[index] = TranslationResult(error=error)
+                        if error.reason in ("quota", "authentication", "unsupported_pair", "credentials_required", "invalid_configuration"):
+                            blocked = True
+            check_cancelled(stop)
+        finally:
+            for future in pending:
+                future.cancel()
+            executor.shutdown(wait=True, cancel_futures=True)
+        for index in missing:
+            if results[index] is None:
+                parts = pieces.get(index)
+                results[index] = TranslationResult(" ".join(parts)) if parts and all(part is not None for part in parts) else TranslationResult(skipped=True)
+        check_cancelled(stop)
+        if use_cache:
+            for index in missing:
+                if results[index].succeeded:
+                    self._save_cache(self._cache_path(texts[index], options, source, target), results[index].text)
+        LOGGER.info("翻译集合结束：成功 %d，失败 %d，未调度 %d", sum(result.succeeded for result in results),
+                    sum(result.error is not None for result in results), sum(result.skipped for result in results))
+        return tuple(results)
+
+    def translate(self, text, timeout, stop, options=None, *, source_language="en", target_language="zh-CN", use_cache=True):
         """后台线程中同步调用；失败抛 TranslationError，取消抛 TaskCancelled。
 
         未指定 options 时使用默认 MyMemory，而非隐式读取全局设置。
         同语种/空白直接返回原文；其他结果只有完整成功才缓存。
+        use_cache=False 允许业务模块自行组织集合缓存，不读取或生成逐条文件。
         """
         check_cancelled(stop)
         options = options or TranslationOptions.from_values({"timeout_seconds": timeout})
@@ -217,25 +418,18 @@ class Translator:
         if not text.strip() or source == target:
             return text
         validate_options(options)
-        key = sha256((options.signature + "|" + source + "|" + target + "|" + text).encode()).hexdigest()
-        path = self.cache / (key + ".txt")
-        try:
-            value = path.read_text(encoding="utf-8")
-            if value.strip():
+        path = self._cache_path(text, options, source, target)
+        if use_cache:
+            value = self._read_cache(path)
+            if value is not None:
                 return value
-        except OSError:
-            pass
         values = []
         for part in chunks(text):
             check_cancelled(stop)
             values.append(request_translation(part, options, stop, source_language=source, target_language=target))
         value = " ".join(values)
         check_cancelled(stop)
-        try:
-            self.cache.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(".tmp")
-            temporary.write_text(value, encoding="utf-8")
-            temporary.replace(path)
-        except OSError:
-            pass
+        if not use_cache:
+            return value
+        self._save_cache(path, value)
         return value
