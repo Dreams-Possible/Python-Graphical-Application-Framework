@@ -52,6 +52,38 @@ python3 main.py
 
 启动后，可在 **设置 → 当前位置** 选择网络定位或手动地点。当前天气、日历和时钟共用这一位置；天气搜索不改变它。API 地址、翻译服务及刷新策略在各设置分类中配置。
 
+## 构建与验证
+
+### 构建应用
+
+在仓库根目录、目标操作系统本机执行：
+
+```bash
+python scripts/build.py
+```
+
+脚本会自动准备项目 `.venv` 和构建依赖，再执行打包。Linux/macOS 可使用 `python3`。输出位于 `dist/`，按平台生成可执行文件或 `.app`，包含默认配置和语言资源；签名、安装器及公证不在当前脚本范围。
+
+需要清理构建产物时，单独执行：
+
+```bash
+python scripts/clean.py
+```
+
+### 开发校验
+
+修改代码或语言资源后，可使用项目解释器运行以下检查；它们不是启动或打包前需要手动执行的步骤。以下为 Windows 命令，Linux/macOS 将解释器路径替换为 `.venv/bin/python`：
+
+```powershell
+# 自动化测试
+.venv/Scripts/python.exe -m unittest discover -s tests -v
+
+# 多语言资源校验
+.venv/Scripts/python.exe scripts/validate_locales.py
+```
+
+测试使用固定响应、临时用户目录和模拟接口，不代表各外部服务的实时可用性。资源校验检查重复键、英文回退覆盖、模板参数及源码静态引用。
+
 ## 外部服务与 API
 
 项目使用多种独立服务。下表列出默认来源和用途；具体请求由设置、缓存状态及用户操作决定。
@@ -124,26 +156,6 @@ docs/                      架构及界面设计说明
 ```
 
 页面通过 ViewModel 和后台任务获取数据，界面不直接执行网络请求。主题、语言资源、配置保存及任务生命周期由公共基础设施提供。新增页面在 `src/app/bootstrap.py` 装配并注册；新增设置提供字段与默认 JSON；新增数据来源实现对应适配器。
-
-### 验证与构建
-
-准备好 `.venv` 后，使用项目解释器运行测试与资源校验。以下为 Windows 命令，Linux/macOS 将解释器路径替换为 `.venv/bin/python`：
-
-```powershell
-.venv/Scripts/python.exe -m unittest discover -s tests -v
-.venv/Scripts/python.exe scripts/validate_locales.py
-```
-
-测试使用固定响应、临时用户目录和模拟接口，不代表各外部服务的实时可用性。资源校验检查重复键、英文回退覆盖、模板参数及源码静态引用。
-
-在目标操作系统本机构建：
-
-```bash
-python scripts/build.py
-python scripts/clean.py
-```
-
-Linux/macOS 可使用 `python3`。构建输出位于 `dist/`，按平台生成可执行文件或 `.app`，包含默认配置和语言资源；签名、安装器及公证不在当前脚本范围。
 
 ## 设计文档
 
